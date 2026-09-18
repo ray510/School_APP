@@ -1,0 +1,25 @@
+{
+  "name": "@hk-school/worker",
+  "version": "0.1.0",
+  "description": "香港年度選校資訊平台 - Cloudflare Worker",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --env local --port 8787 --persist-to .wrangler/state",
+    "build": "wrangler build",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts",
+    "test": "vitest"
+  },
+  "dependencies": {
+    "hono": "^4.1.0",
+    "zod": "^3.22.4",
+    "@hk-school/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "wrangler": "^3.47.0",
+    "typescript": "^5.6.2",
+    "@cloudflare/workers-types": "^4.20240919.0",
+    "eslint": "^8.57.0",
+    "vitest": "^1.2.2"
+  }
+}

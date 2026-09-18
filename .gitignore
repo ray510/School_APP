@@ -1,0 +1,19 @@
+# --- hk-school-guide: never commit raw archives, processing evidence or secrets (DEVELOPMENT.md §8.2)
+archive/
+artifacts/
+backups/
+.wrangler/
+node_modules/
+dist/
+.env
+.env.*
+.dev.vars
+.dev.vars.*
+*.log
+
+# tool / editor state
+.omc/
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store

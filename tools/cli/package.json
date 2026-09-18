@@ -1,0 +1,25 @@
+{
+  "name": "@hk-school/cli",
+  "version": "0.1.0",
+  "description": "香港年度選校資訊平台 - CLI 工具",
+  "type": "module",
+  "bin": {
+    "school": "src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts",
+    "test": "vitest"
+  },
+  "dependencies": {
+    "yargs": "^17.7.2",
+    "zod": "^3.22.4",
+    "@hk-school/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.2",
+    "tsx": "^4.7.2",
+    "eslint": "^8.57.0",
+    "vitest": "^1.2.2"
+  }
+}

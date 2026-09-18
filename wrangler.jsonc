@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json.schemastore.org/wrangler.json",
+  "name": "hk-school-guide-do-not-deploy",
+  "main": "apps/worker/src/index.ts",
+  "compatibility_date": "2026-09-18",
+  "workers_dev": false,
+  "preview_urls": false,
+  "assets": {
+    "directory": "./apps/web/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api", "/api/*"]
+  },
+  "triggers": {
+    "crons": []
+  },
+  "vars": {
+    "APP_ENV": "invalid",
+    "ENABLE_ADMIN_WRITE": "false",
+    "ENABLE_SOURCE_PROBE": "false"
+  },
+  "env": {
+    "local": {
+      "name": "hk-school-guide-local",
+      "workers_dev": false,
+      "preview_urls": false,
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "hk-school-guide-local",
+          "database_id": "00000000-0000-0000-0000-000000000001",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "vars": {
+        "APP_ENV": "local",
+        "APP_TIMEZONE": "Asia/Hong_Kong",
+        "STRICT_FREE_MODE": "true",
+        "ALLOW_TEST_DATA": "true",
+        "ENABLE_ADMIN_WRITE": "false",
+        "ENABLE_SOURCE_PROBE": "false",
+        "DATA_UPDATE_MODE": "manual",
+        "ARCHIVE_MODE": "local"
+      },
+      "triggers": {
+        "crons": []
+      }
+    },
+    "staging": {
+      "name": "hk-school-guide-staging",
+      "workers_dev": true,
+      "preview_urls": false,
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "hk-school-guide-staging-db",
+          "database_id": "REPLACE_STAGING_D1_ID",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "vars": {
+        "APP_ENV": "staging",
+        "APP_TIMEZONE": "Asia/Hong_Kong",
+        "STRICT_FREE_MODE": "true",
+        "ALLOW_TEST_DATA": "true",
+        "ENABLE_ADMIN_WRITE": "false",
+        "ENABLE_SOURCE_PROBE": "false",
+        "DATA_UPDATE_MODE": "manual",
+        "ARCHIVE_MODE": "local"
+      },
+      "triggers": {
+        "crons": []
+      }
+    },
+    "production": {
+      "name": "hk-school-guide",
+      "workers_dev": true,
+      "preview_urls": false,
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "hk-school-guide-production-db",
+          "database_id": "REPLACE_PRODUCTION_D1_ID",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "vars": {
+        "APP_ENV": "production",
+        "APP_TIMEZONE": "Asia/Hong_Kong",
+        "STRICT_FREE_MODE": "true",
+        "ALLOW_TEST_DATA": "false",
+        "ENABLE_ADMIN_WRITE": "false",
+        "ENABLE_SOURCE_PROBE": "false",
+        "DATA_UPDATE_MODE": "manual",
+        "ARCHIVE_MODE": "local"
+      },
+      "triggers": {
+        "crons": []
+      }
+    }
+  }
+}

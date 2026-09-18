@@ -1,0 +1,31 @@
+{
+  "name": "hk-school-guide",
+  "version": "0.1.0",
+  "description": "香港年度選校資訊平台",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=24.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "dev:web": "pnpm --filter @hk-school/web run dev",
+    "dev:worker": "pnpm --filter @hk-school/worker run dev",
+    "build:web": "pnpm --filter @hk-school/web run build",
+    "build:worker": "pnpm --filter @hk-school/worker run build",
+    "typecheck": "pnpm --filter ... run typecheck",
+    "lint": "pnpm --filter ... run lint",
+    "test": "pnpm --filter ... run test",
+    "test:e2e": "pnpm --filter @hk-school/web run test:e2e",
+    "school": "tsx tools/cli/src/index.ts"
+  },
+  "devDependencies": {
+    "tsx": "^4.7.2",
+    "typescript": "^5.6.2"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "tools/*"
+  ]
+}
