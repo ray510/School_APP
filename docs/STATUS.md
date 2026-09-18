@@ -1,13 +1,18 @@
-# Current development status
+# HK_APP 狀態入口
 
-**Phase 1: IN_PROGRESS — local technical checks passed; product/release acceptance remains incomplete.**
+更新：2026-09-18。
 
-Code commit baa7793e83e376af2ab55cb27aac3065cd3ea0a1 passed GitHub Actions run 35362039037 on Node 24.20.0. Both regression and local-toolchain jobs succeeded.
+請以 [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) 的 commit-specific 證據為準。本檔取代最初骨架階段未經完整驗收的「100% 完成」說法。
 
-Verified: 51 native regression cases, 65 Vitest cases, full workspace typecheck, lint, frontend build, Worker dry-run, local D1 migration/fixture and ten real local workerd HTTP checks.
+目前工作分支 `fix/phase1-stabilization`，Draft PR #1。已驗證程式 commit `39594dc525ceccb69e31527798c66810b4517daf`。
 
-See [STABILIZATION_STATUS.md](STABILIZATION_STATUS.md) for exact evidence and limits. CI used bootstrap dependency resolution; its generated pnpm-lock.yaml still needs to be committed and frozen installation rerun. Browser/Windows and real school-data feature acceptance are not claimed.
+| 軸線 | 狀態 |
+|---|---|
+| 本機安裝、建置、回歸／單元、實際 Worker/D1、桌面／手機瀏覽器 | PASS |
+| S01 真實下載與三學段小樣本正規化 | PASS，未發佈 |
+| 三份年度 raw 專用 parser，獨立筆數對照 | PASS，配對未自動批准 |
+| 全量學校身份配對與年度內容／招生資料審核 | IN_PROGRESS |
+| 遠端安全、持久備份、帳戶成本及匯入 | IN_PROGRESS，新增寫入命令仍限制 local |
+| Staging／production 雲端驗收 | NOT_RUN |
 
-No Cloudflare remote deployment, database migration/import, cron activation or production publication was performed. Changes are isolated to fix/phase1-stabilization in Draft PR #1; main is unchanged.
-
-The previous initial-completion claims are superseded. Next gate: retain and commit the actual CI-generated lockfile, verify frozen installation and browser behavior, then implement a verified-source-to-local-search feature slice.
+本輪只有 repo 分支提交與 GitHub Actions；沒有 main 合併或 Cloudflare 遠端寫入。不得以 CI success 替代資料審核或部署驗收。

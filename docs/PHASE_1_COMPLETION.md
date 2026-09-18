@@ -1,11 +1,11 @@
-# Phase 1 acceptance status
+# Phase 1 驗收記錄（取代初始骨架自評）
 
-**IN_PROGRESS: local technical checks PASS, not unconditional product/release completion.**
+程式 commit：`39594dc525ceccb69e31527798c66810b4517daf`。
 
-The original 7d04886 report treated scaffolding as completed acceptance testing and is superseded. It remains recoverable in Git history.
+實際 CI：<https://github.com/ray510/HK_APP/actions/runs/35366624076>，結果 success。
 
-Code baa7793 passed GitHub Actions run 35362039037: Node 24 workspace typecheck/lint, 51 native regression tests, 65 Vitest tests, frontend build, Worker dry-run, local D1 migration/fixture and ten actual local HTTP checks.
+已驗證 fresh checkout／frozen install、生成 Worker binding 型別、TypeScript、lint、unit/regression、本機 D1 migration／fixture、JSON API 404、Vue build、Worker dry-run、深層路由刷新、desktop/mobile Chromium。這些是 GitHub Actions Ubuntu／Node 24 的結果，不是 Windows 或 Cloudflare production 結果。
 
-Remaining gates: commit and verify the real CI-generated pnpm lockfile using frozen install; browser acceptance; real school-data feature implementation and source verification. Detailed evidence and limits are in STABILIZATION_STATUS.md.
+早期報告曾把「檔案已建立」等同「可以運行」，現在已由真正執行證據取代。其原始內容仍可在 Git history 查閱。
 
-No Cloudflare remote operation is authorized by this document. No remote deployment or database write occurred. A healthy local service with data_status empty is not a published school information platform.
+目前已有較後階段的本機功能，但它們不會令全量資料審核、遠端安全或部署自動變成 PASS。完整邊界見 [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md)。
