@@ -1,120 +1,47 @@
 <template>
-  <div class="home">
-    <section class="welcome">
-      <h2>歡迎使用香港年度選校資訊平台</h2>
-      <p>本平台提供幼稚園、小學、中學的資訊查詢與比較服務。</p>
+  <main class="home">
+    <h2>香港年度選校資訊平台</h2>
+    <p>開發中：學校搜尋、比較及年度招生資訊尚未開放。</p>
+    <section aria-labelledby="status-heading" aria-live="polite">
+      <h3 id="status-heading">系統狀態</h3>
+      <p v-if="loading">正在讀取狀態…</p>
+      <p v-else-if="error" role="alert">{{ error }}</p>
+      <dl v-else-if="health">
+        <dt>環境</dt><dd>{{ health.environment }}</dd>
+        <dt>資料庫</dt><dd>{{ health.database }}</dd>
+        <dt>服務狀態</dt><dd>{{ health.readiness }}</dd>
+        <dt>公開資料</dt><dd>{{ health.data_status === 'published' ? '已有公開版本' : '未有可用的公開資料' }}</dd>
+        <dt>核對時間</dt><dd>{{ new Date(health.timestamp).toLocaleString('zh-HK', { timeZone: 'Asia/Hong_Kong' }) }}（香港時間）</dd>
+      </dl>
+      <p>服務能回應，並不代表已有正式學校資料。未公布的日期不會以示範資料填補。</p>
     </section>
-
-    <section class="status">
-      <h3>系統狀態</h3>
-      <div class="status-info">
-        <p v-if="health">
-          <span class="label">環境：</span><strong>{{ health.environment }}</strong>
-        </p>
-        <p v-if="health">
-          <span class="label">狀態：</span><strong>{{ health.readiness }}</strong>
-        </p>
-        <p v-if="health">
-          <span class="label">時間：</span><span>{{ new Date(health.timestamp).toLocaleString('zh-HK') }}</span>
-        </p>
-      </div>
-      <p class="note">📌 本平台正在 Phase 1 開發中，功能逐步完善。</p>
-    </section>
-
-    <section class="quick-links">
-      <h3>快速連結</h3>
-      <ul>
-        <li><RouterLink to="/schools">瀏覽學校</RouterLink></li>
-        <li><RouterLink to="/shortlist">我的選校清單</RouterLink></li>
-        <li><RouterLink to="/about">關於本平台</RouterLink></li>
-      </ul>
-    </section>
-  </div>
+  </main>
 </template>
-
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
-import { RouterLink } from 'vue-router';
-import type { HealthResponse } from '@hk-school/contracts';
-
+import { HealthResponseSchema, type HealthResponse } from '@hk-school/contracts';
 const health = ref<HealthResponse | null>(null);
-
+const loading = ref(true);
+const error = ref('');
 onMounted(async () => {
   try {
-    const response = await fetch('/api/v1/health');
-    const data = await response.json();
-    health.value = data.data;
-  } catch (error) {
-    console.error('Failed to fetch health:', error);
+    const response = await fetch('/api/v1/health', { signal: AbortSignal.timeout(10000) });
+    const body: unknown = await response.json();
+    if (!body || typeof body !== 'object' || !('data' in body)) throw new Error('Invalid response');
+    const result = HealthResponseSchema.safeParse(body.data);
+    if (!result.success) throw new Error('Invalid health contract');
+    if (!response.ok && response.status !== 503) throw new Error('Unexpected response');
+    health.value = result.data;
+  } catch {
+    error.value = '未能取得系統狀態。請確認本機 Worker 已啟動。';
+  } finally {
+    loading.value = false;
   }
 });
 </script>
-
 <style scoped>
-.home {
-  padding: 20px 0;
-}
-
-section {
-  margin-bottom: 40px;
-}
-
-h2 {
-  font-size: 24px;
-  margin-bottom: 12px;
-}
-
-h3 {
-  font-size: 18px;
-  margin-bottom: 16px;
-  border-bottom: 2px solid #007bff;
-  padding-bottom: 8px;
-}
-
-.welcome p {
-  font-size: 16px;
-  color: #666;
-  line-height: 1.6;
-}
-
-.status-info {
-  background: #f8f9fa;
-  padding: 16px;
-  border-radius: 4px;
-  margin-bottom: 12px;
-}
-
-.status-info p {
-  margin: 8px 0;
-  font-size: 14px;
-}
-
-.label {
-  color: #666;
-}
-
-.note {
-  color: #666;
-  font-size: 14px;
-  margin: 0;
-}
-
-.quick-links ul {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.quick-links li {
-  margin-bottom: 8px;
-}
-
-.quick-links a {
-  color: #007bff;
-  text-decoration: none;
-}
-
-.quick-links a:hover {
-  text-decoration: underline;
-}
+.home { max-width: 760px; margin: auto; padding: 24px; line-height: 1.7; }
+section { margin-top: 24px; border: 1px solid #ddd; border-radius: 8px; padding: 20px; }
+dl { display: grid; grid-template-columns: 100px 1fr; gap: 8px; }
+dd { margin: 0; overflow-wrap: anywhere; }
 </style>

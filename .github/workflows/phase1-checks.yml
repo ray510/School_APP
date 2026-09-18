@@ -1,0 +1,72 @@
+name: Phase 1 local checks
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: phase1-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: node scripts/run-regressions.mjs
+  local-toolchain:
+    needs: regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: corepack enable && corepack prepare pnpm@10.28.0 --activate
+      - name: Install (bootstrap only until a reviewed lockfile is committed)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if test -f pnpm-lock.yaml; then
+            pnpm install --frozen-lockfile
+          else
+            echo '::warning::No committed lockfile. This is bootstrap validation, not a reproducible release.'
+            pnpm install --no-frozen-lockfile
+          fi
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test:unit
+      - run: pnpm build:web
+      - run: pnpm build:worker
+      - run: pnpm db:migrate:local
+      - run: pnpm fixture:local
+      - name: Actual local Wrangler HTTP smoke (no remote credentials)
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/local.mjs dev > "$RUNNER_TEMP/worker.log" 2>&1 &
+          worker_pid=$!
+          trap 'kill "$worker_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --silent --fail --max-time 2 http://127.0.0.1:8787/api/v1/health > /dev/null; then break; fi
+            sleep 1
+          done
+          pnpm smoke:local
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase1-bootstrap-evidence
+          path: |
+            pnpm-lock.yaml
+            ${{ runner.temp }}/worker.log
+          retention-days: 7

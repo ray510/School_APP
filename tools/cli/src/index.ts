@@ -1,132 +1,55 @@
 #!/usr/bin/env node
-
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
-
-const cli = yargs(hideBin(process.argv))
-  .command(
-    'source <command>',
-    'Manage data sources',
-    (yargs) => {
-      return yargs
-        .command(
-          'probe [--all]',
-          'Probe official data sources',
-          {
-            all: { type: 'boolean', default: false, describe: 'Probe all sources' },
-            out: { type: 'string', describe: 'Output file for probe results' }
-          },
-          async (argv) => {
-            console.log('📡 Probing sources...');
-            console.log('Status: BLOCKED - Implementation pending Phase 1');
-            process.exit(1);
-          }
-        )
-        .command(
-          'build',
-          'Build data bundle',
-          {
-            source: { type: 'string', required: true },
-            scope: { type: 'string', default: 'full', describe: 'full|canary' },
-            limit: { type: 'number', describe: 'Item limit for canary' },
-            out: { type: 'string', required: true }
-          },
-          async (argv) => {
-            console.log('📦 Building bundle...');
-            console.log('Status: BLOCKED - Implementation pending Phase 1');
-            process.exit(1);
-          }
-        );
-    }
-  )
-  .command(
-    'review <command>',
-    'Review and approve data',
-    (yargs) => {
-      return yargs
-        .command('prepare', 'Prepare review package', {}, async () => {
-          console.log('📋 Preparing review...');
-          console.log('Status: BLOCKED - Implementation pending Phase 1');
-          process.exit(1);
-        })
-        .command('approve', 'Approve reviewed data', {}, async () => {
-          console.log('✅ Approving...');
-          console.log('Status: BLOCKED - Implementation pending Phase 1');
-          process.exit(1);
-        });
-    }
-  )
-  .command(
-    'fixture <command>',
-    'Manage test fixtures',
-    (yargs) => {
-      return yargs
-        .command(
-          'seed',
-          'Seed local database with test data',
-          {
-            environment: { type: 'string', default: 'local', describe: 'local|staging' }
-          },
-          async (argv) => {
-            if (argv.environment !== 'local') {
-              console.error('❌ Only local environment supported for fixtures');
-              process.exit(1);
-            }
-            console.log('🌱 Seeding local fixture...');
-            console.log('Status: BLOCKED - Implementation pending Phase 1');
-            console.log('Note: Fixture should be clearly labeled as test data');
-            process.exit(1);
-          }
-        );
-    }
-  )
-  .command(
-    'config <command>',
-    'Check configuration',
-    (yargs) => {
-      return yargs
-        .command(
-          'check',
-          'Verify configuration consistency',
-          {
-            environment: { type: 'string', required: true },
-            remote: { type: 'boolean', default: false }
-          },
-          async (argv) => {
-            console.log('🔍 Checking configuration...');
-            console.log(`Environment: ${argv.environment}`);
-            if (argv.remote) {
-              console.log('Mode: Remote validation (not yet supported)');
-            } else {
-              console.log('Mode: Local validation');
-            }
-            console.log('Status: BLOCKED - Implementation pending Phase 1');
-            process.exit(1);
-          }
-        );
-    }
-  )
-  .command(
-    'smoke',
-    'Run smoke tests',
-    {
-      'base-url': { type: 'string', required: true },
-      environment: { type: 'string', required: true },
-      'expect-published': { type: 'boolean', default: false }
-    },
-    async (argv) => {
-      console.log('🔥 Running smoke tests...');
-      console.log(`Base URL: ${argv['base-url']}`);
-      console.log(`Environment: ${argv.environment}`);
-      console.log(`Expect published: ${argv['expect-published']}`);
-      console.log('Status: BLOCKED - Implementation pending Phase 1');
-      process.exit(1);
-    }
-  )
-  .help()
-  .alias('h', 'help')
-  .version('0.1.0')
-  .alias('v', 'version')
-  .strict();
-
-cli.parse();
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+function blocked(message: string): void {
+  console.error(`BLOCKED: ${message}`);
+  process.exitCode = 1;
+}
+function localScript(script: string, args: string[]): void {
+  const file = fileURLToPath(new URL(`../../../scripts/${script}`, import.meta.url));
+  const result = spawnSync(process.execPath, [file, ...args], { stdio: 'inherit' });
+  if (result.error) console.error(result.error.message);
+  process.exitCode = result.status ?? 1;
+}
+void yargs(hideBin(process.argv))
+  .command('source', 'Manage data sources', command => command
+    .command('probe', 'Probe official sources (not implemented)', {
+      all: {type:'boolean',default:false}, out:{type:'string'}
+    }, () => blocked('Source probe requires a verified source contract; no network request made'))
+    .command('build', 'Build a data bundle (not implemented)', {
+      source:{type:'string',demandOption:true},scope:{type:'string',choices:['full','canary'],default:'full'},
+      limit:{type:'number'},out:{type:'string',demandOption:true}
+    }, () => blocked('Bundle build/review is not implemented; nothing imported'))
+    .demandCommand(1))
+  .command('review', 'Review data (not implemented)', command => command
+    .command('prepare', 'Prepare review', {}, () => blocked('Review package is not implemented'))
+    .command('approve', 'Approve review', {}, () => blocked('Publication approval is not implemented'))
+    .demandCommand(1))
+  .command('fixture', 'Manage synthetic local fixtures', command => command
+    .command('seed', 'Seed unpublished local test records only', {
+      environment:{type:'string',choices:['local','staging','production'],default:'local'}
+    }, argv => {
+      if (argv.environment !== 'local') return blocked('Fixtures may only use the local database');
+      localScript('local.mjs',['fixture']);
+    }).demandCommand(1))
+  .command('config', 'Check configuration', command => command
+    .command('check', 'Check local-only safeguards', {
+      environment:{type:'string',choices:['local','staging','production'],demandOption:true},remote:{type:'boolean',default:false}
+    }, argv => {
+      if (argv.environment !== 'local' || argv.remote) return blocked('Remote configuration validation is not implemented');
+      localScript('local.mjs',['config']);
+    }).demandCommand(1))
+  .command('smoke', 'Read-only local HTTP smoke test', {
+    'base-url':{type:'string',demandOption:true},
+    environment:{type:'string',choices:['local','staging','production'],demandOption:true},
+    'expect-published':{type:'boolean',default:false}
+  }, argv => {
+    if (argv.environment !== 'local') return blocked('Only local smoke testing is implemented');
+    localScript('smoke-local.mjs',[
+      '--base-url',argv['base-url'],...(argv['expect-published'] ? ['--expect-published'] : [])
+    ]);
+  })
+  .demandCommand(1).strict().help().alias('h','help').version('0.1.0').alias('v','version').parseAsync()
+  .catch(error => { console.error(error instanceof Error ? error.message : 'CLI failed'); process.exitCode=1; });

@@ -92,10 +92,14 @@ export const EventsQuerySchema = z.object({
 
 // Health check response
 export const HealthResponseSchema = z.object({
-  environment: z.enum(['local', 'staging', 'production']),
-  schema_version: z.string(),
+  environment: z.enum(['local', 'staging', 'production', 'invalid']),
+  liveness: z.literal('ok'),
+  database: z.enum(['not_checked', 'missing', 'ok', 'error']),
+  schema_version: z.string().nullable(),
   readiness: z.enum(['ok', 'degraded', 'empty', 'error']),
+  data_status: z.enum(['unavailable', 'empty', 'published']),
   public_release_id: z.string().nullable(),
+  public_release_ids: z.array(z.string()),
   timestamp: z.string().datetime(),
 });
 

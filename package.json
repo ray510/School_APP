@@ -4,28 +4,38 @@
   "description": "香港年度選校資訊平台",
   "type": "module",
   "private": true,
-  "engines": {
-    "node": ">=24.0.0",
-    "pnpm": ">=9.0.0"
-  },
+  "packageManager": "pnpm@10.28.0",
+  "engines": { "node": ">=24.0.0 <25", "pnpm": ">=10.28.0 <11" },
   "scripts": {
     "dev:web": "pnpm --filter @hk-school/web run dev",
-    "dev:worker": "pnpm --filter @hk-school/worker run dev",
+    "dev:worker": "node scripts/local.mjs dev",
     "build:web": "pnpm --filter @hk-school/web run build",
-    "build:worker": "pnpm --filter @hk-school/worker run build",
-    "typecheck": "pnpm --filter ... run typecheck",
-    "lint": "pnpm --filter ... run lint",
-    "test": "pnpm --filter ... run test",
+    "build:worker": "node scripts/local.mjs build",
+    "types:worker": "node scripts/local.mjs types",
+    "typecheck": "pnpm types:worker && pnpm --filter @hk-school/contracts run typecheck && pnpm --filter @hk-school/web run typecheck && pnpm --filter @hk-school/worker run typecheck && pnpm --filter @hk-school/cli run typecheck",
+    "lint": "eslint apps packages tools --ext .ts,.vue --max-warnings 0",
+    "test": "pnpm test:regression && pnpm test:unit",
+    "test:regression": "node scripts/run-regressions.mjs",
+    "test:unit": "vitest run --config vitest.config.ts",
     "test:e2e": "pnpm --filter @hk-school/web run test:e2e",
+    "db:migrate:local": "node scripts/local.mjs migrate",
+    "fixture:local": "node scripts/local.mjs fixture",
+    "smoke:local": "node scripts/smoke-local.mjs",
     "school": "tsx tools/cli/src/index.ts"
   },
   "devDependencies": {
     "tsx": "^4.7.2",
-    "typescript": "^5.6.2"
+    "typescript": "5.6.2",
+    "wrangler": "4.135.0",
+    "vitest": "^1.2.2",
+    "@types/node": "^22.10.0",
+    "@types/yargs": "^17.0.33",
+    "eslint": "8.57.1",
+    "eslint-plugin-vue": "^9.22.0",
+    "vue-eslint-parser": "^9.4.3",
+    "@typescript-eslint/parser": "^8.20.0",
+    "@typescript-eslint/eslint-plugin": "^8.20.0",
+    "@hk-school/contracts": "workspace:*"
   },
-  "workspaces": [
-    "apps/*",
-    "packages/*",
-    "tools/*"
-  ]
+  "pnpm": { "onlyBuiltDependencies": ["esbuild", "workerd"] }
 }

@@ -1,16 +1,17 @@
-/**
- * EDB School Directory Normalizer
- * S01 CSV → school_identities + profile_versions + identity_mappings
- */
-
-import { parseEDBDirectory, type ParseResult } from '../parsers/csv-parser';
-import {
-  generateSchoolId,
-  generateItemKey,
-  createMapping,
-  type SessionCode
-} from '@hk-school/contracts/src/identity';
-
+/** S01 baseline normalizer. It does not infer school level, sessions, campus or admission dates. */
+import { parseEDBDirectory, type SourceEncoding } from '../parsers/csv-parser.ts';
+import { generateSchoolId, generateItemKey, createMapping, type IdentityMapping, type SchoolLevel } from '@hk-school/contracts/identity';
+export interface NormalizationContext {
+  sourceId: string;
+  snapshotId: string;
+  sourceReferencePeriod: string | null;
+  retrievedAt: string;
+  parserVersion: string;
+  categoryMappingVersion: string;
+  /** Exact ENGLISH CATEGORY values, independently reviewed against the source contract. No fuzzy match. */
+  categoryLevels: Readonly<Record<string, SchoolLevel>>;
+  encoding?: SourceEncoding;
+}
 export interface NormalizedSchool {
   school_id: string;
   school_no: string;
@@ -18,155 +19,99 @@ export interface NormalizedSchool {
   chinese_name: string;
   english_address: string;
   chinese_address: string;
-  longitude?: string;
-  latitude?: string;
+  longitude: number | null;
+  latitude: number | null;
   category: string;
-  level: 'KG' | 'PRIMARY' | 'SECONDARY';
+  level: SchoolLevel;
+  session_code: 'UNKNOWN';
+  campus_id: null;
   source_id: string;
   source_record_key: string;
+  provenance: Omit<NormalizationContext, 'categoryLevels' | 'encoding'>;
 }
-
 export interface NormalizationResult {
   schools: NormalizedSchool[];
-  mappings: any[];
+  mappings: Array<Omit<IdentityMapping, 'mappingId' | 'createdAt'>>;
   errors: Array<{ row: number; message: string }>;
-  stats: {
-    total: number;
-    success: number;
-    failed: number;
-    by_level: Record<string, number>;
-  };
+  publishable: boolean;
+  stats: { total: number; success: number; failed: number; by_level: Record<SchoolLevel, number> };
 }
-
-/**
- * 將 EDB School Directory CSV 正規化為資料庫模型
- */
-export function normalizeEDBDirectory(
-  content: string | Buffer
-): NormalizationResult {
-  const parsed = parseEDBDirectory(content);
-  const schools: NormalizedSchool[] = [];
-  const mappings: any[] = [];
-  const errors: Array<{ row: number; message: string }> = [];
-  const stats = {
-    total: parsed.rowCount,
-    success: 0,
-    failed: 0,
-    by_level: { KG: 0, PRIMARY: 0, SECONDARY: 0 } as Record<string, number>
-  };
-
-  if (parsed.missingFields.length > 0) {
-    return {
-      schools: [],
-      mappings: [],
-      errors: [{ row: 0, message: `缺失必要欄位: ${parsed.missingFields.join(', ')}` }],
-      stats
-    };
+function coordinate(value: string | undefined, bound: number): number | null {
+  if (!value?.trim()) return null;
+  const number = Number(value);
+  if (!Number.isFinite(number) || Math.abs(number) > bound) throw new Error('Invalid coordinates');
+  return number;
+}
+export function normalizeEDBDirectory(content: string | Buffer, context: NormalizationContext): NormalizationResult {
+  if (!context?.sourceId?.trim() || !context.snapshotId?.trim() || !context.parserVersion?.trim() ||
+      !context.categoryMappingVersion?.trim() || !context.categoryLevels ||
+      !context.retrievedAt || !Number.isFinite(Date.parse(context.retrievedAt)) ||
+      !(context.sourceReferencePeriod === null || typeof context.sourceReferencePeriod === 'string')) {
+    throw new Error('Verified source context is required; do not invent dates or snapshot IDs');
   }
-
-  // 處理每一筆記錄
-  for (let i = 0; i < parsed.rows.length; i++) {
-    const row = parsed.rows[i];
-    const rowNum = i + 2; // Excel 列號（1-indexed + header）
-
+  const parsed = parseEDBDirectory(content, { encoding: context.encoding });
+  const result: NormalizationResult = {
+    schools: [], mappings: [], errors: [], publishable: false,
+    stats: { total: parsed.rowCount, success: 0, failed: 0, by_level: { KG: 0, PRIMARY: 0, SECONDARY: 0 } }
+  };
+  if (parsed.missingFields.length || parsed.issues.warnings.length || !parsed.headers.includes('ENGLISH CATEGORY')) {
+    result.errors.push({ row: 0, message: 'Source contract or CSV shape failed validation' });
+    result.stats.failed = parsed.rowCount;
+    return result;
+  }
+  const counts = new Map<string, number>();
+  for (const row of parsed.rows) {
+    const key = row['SCHOOL NO.'].trim();
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const { categoryLevels: _levels, encoding: _encoding, ...provenance } = context;
+  for (const [index, row] of parsed.rows.entries()) {
     try {
-      const schoolNo = row['SCHOOL NO.'] || '';
-      const englishName = row['ENGLISH NAME'] || '';
-      const chineseName = row['中文名稱'] || '';
-
-      // 驗證必要欄位
-      if (!schoolNo || !englishName || !chineseName) {
-        errors.push({
-          row: rowNum,
-          message: '缺失必要欄位（校號、英文名、中文名）'
-        });
-        stats.failed++;
-        continue;
-      }
-
-      // 推斷學校級別（簡單啟發式）
-      let level: 'KG' | 'PRIMARY' | 'SECONDARY' = 'PRIMARY';
-      const nameUpper = englishName.toUpperCase() + chineseName;
-
-      if (nameUpper.includes('KINDERGARTEN') || nameUpper.includes('幼稚園') || nameUpper.includes('幼兒')) {
-        level = 'KG';
-      } else if (nameUpper.includes('SECONDARY') || nameUpper.includes('COLLEGE') || nameUpper.includes('中學')) {
-        level = 'SECONDARY';
-      }
-
-      const schoolId = generateSchoolId('edb-school-directory', schoolNo);
-
-      const school: NormalizedSchool = {
-        school_id: schoolId,
-        school_no: schoolNo,
-        english_name: englishName,
-        chinese_name: chineseName,
-        english_address: row['ENGLISH ADDRESS'] || '',
-        chinese_address: row['中文地址'] || '',
-        longitude: row['LONGITUDE'] || undefined,
-        latitude: row['LATITUDE'] || undefined,
-        category: row['ENGLISH CATEGORY'] || row['中文類別'] || 'Unknown',
-        level,
-        source_id: 'edb-school-directory',
-        source_record_key: schoolNo
-      };
-
-      // 建立 mapping
-      const mapping = createMapping(
-        'edb-school-directory',
-        schoolNo,
-        schoolId,
-        'ALL_DAY',
-        null
-      );
-
-      schools.push(school);
-      mappings.push(mapping);
-
-      stats.success++;
-      stats.by_level[level]++;
-    } catch (error) {
-      errors.push({
-        row: rowNum,
-        message: error instanceof Error ? error.message : '未知錯誤'
+      const key = row['SCHOOL NO.'].trim();
+      if (!key || !row['ENGLISH NAME'].trim() || !row['中文名稱'].trim()) throw new Error('Required school identity fields missing');
+      if (counts.get(key) !== 1) throw new Error('Repeated source key requires reviewed campus/session mapping; all repeated rows quarantined');
+      const category = row['ENGLISH CATEGORY'];
+      const level = Object.hasOwn(context.categoryLevels, category) ? context.categoryLevels[category] : undefined;
+      if (!level || !['KG', 'PRIMARY', 'SECONDARY'].includes(level)) throw new Error('Unmapped category; school name is not classification evidence');
+      const schoolId = generateSchoolId(context.sourceId, key);
+      result.schools.push({
+        school_id: schoolId, school_no: key,
+        english_name: row['ENGLISH NAME'], chinese_name: row['中文名稱'],
+        english_address: row['ENGLISH ADDRESS'], chinese_address: row['中文地址'],
+        longitude: coordinate(row.LONGITUDE, 180), latitude: coordinate(row.LATITUDE, 90),
+        category, level, session_code: 'UNKNOWN', campus_id: null,
+        source_id: context.sourceId, source_record_key: key, provenance: { ...provenance }
       });
-      stats.failed++;
+      result.mappings.push(createMapping(context.sourceId, key, schoolId, 'UNKNOWN', null));
+      result.stats.success++;
+      result.stats.by_level[level]++;
+    } catch (error) {
+      result.stats.failed++;
+      result.errors.push({ row: index + 2, message: error instanceof Error ? error.message : 'Unknown normalization error' });
     }
   }
-
-  return {
-    schools,
-    mappings,
-    errors,
-    stats
-  };
+  // Validated baseline output is still NOT approved for publication. Review/import remains separate.
+  return result;
 }
-
-/**
- * 將正規化的學校轉換成 profile_version 內容
- */
 export function createProfileVersion(school: NormalizedSchool) {
   return {
     school_id: school.school_id,
     level: school.level,
-    item_key: generateItemKey(school.school_id, 'ALL_DAY', null),
+    session_code: school.session_code,
+    campus_id: school.campus_id,
+    item_key: generateItemKey(school.school_id, school.session_code, school.campus_id),
+    source_snapshot_ids: [school.provenance.snapshotId],
     content: {
-      basic: {
-        english_name: school.english_name,
-        chinese_name: school.chinese_name,
-        school_no: school.school_no,
-        category: school.category
-      },
-      location: {
-        english_address: school.english_address,
-        chinese_address: school.chinese_address,
-        longitude: school.longitude || null,
-        latitude: school.latitude || null
-      },
-      source_reference_period: '2026-08-31',
-      source_snapshot_ids: ['s01_2026_08_31'],
+      basic: { english_name: school.english_name, chinese_name: school.chinese_name, school_no: school.school_no, category: school.category },
+      location: { english_address: school.english_address, chinese_address: school.chinese_address, longitude: school.longitude, latitude: school.latitude },
+      session: { value: null, state: 'not_provided' },
+      campus: { value: null, state: 'not_verified' },
+      source_reference_period: school.provenance.sourceReferencePeriod,
+      source_snapshot_ids: [school.provenance.snapshotId],
+      parser_version: school.provenance.parserVersion,
+      category_mapping_version: school.provenance.categoryMappingVersion,
       verified: false
     },
-    created_at: new Date().toISOString()
+    created_at: school.provenance.retrievedAt
   };
 }

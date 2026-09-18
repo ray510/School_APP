@@ -1,52 +1,27 @@
 import { Hono } from 'hono';
-import { HealthResponse, HealthResponseSchema } from '@hk-school/contracts';
 import api from './api';
-
-interface Env {
-  Bindings: {
-    DB: D1Database;
-    ASSETS: any;
-  };
-  Variables: {
-    request_id: string;
-    environment: string;
-  };
-}
-
-const app = new Hono<Env>();
-
-// Middleware: Add request ID and environment
-app.use(async (c, next) => {
+import { isApiPath, type HonoEnvironment } from './env';
+import { readEnvironment } from './readiness';
+const app = new Hono<HonoEnvironment>();
+app.use('*', async (c, next) => {
   c.set('request_id', crypto.randomUUID());
-  c.set('environment', c.env.Bindings.DB ? 'unknown' : 'error');
+  c.set('environment', readEnvironment(c.env?.APP_ENV));
+  c.header('X-Request-ID', c.get('request_id'));
+  if (isApiPath(c.req.path)) c.header('Cache-Control', 'no-store');
   await next();
 });
-
-// Mount API routes
 app.route('/api', api);
-
-// Static assets fallback - only for non-API paths
 app.all('*', async (c) => {
-  const { pathname } = new URL(c.req.url);
-
-  // If it's an API path and we got here, it's a 404
-  if (pathname.startsWith('/api/')) {
-    return c.json(
-      {
-        error: {
-          code: 'NOT_FOUND',
-          message: 'API endpoint not found'
-        },
-        meta: {
-          request_id: c.get('request_id')
-        }
-      },
-      { status: 404 }
-    );
+  if (isApiPath(new URL(c.req.url).pathname)) {
+    return c.json({ error: { code: 'NOT_FOUND', message: 'API endpoint not found' }, meta: { request_id: c.get('request_id') } }, 404);
   }
-
-  // Serve static assets
-  return c.env.Bindings.ASSETS.fetch(c.req.raw);
+  if (!c.env?.ASSETS) return c.text('Static assets are not built or bound', 503);
+  return c.env.ASSETS.fetch(c.req.raw);
 });
-
+app.onError((_error, c) => {
+  if (isApiPath(c.req.path)) {
+    return c.json({ error: { code: 'INTERNAL_ERROR', message: 'Request could not be completed' }, meta: { request_id: c.get('request_id') } }, 500);
+  }
+  return c.text('Request could not be completed', 500);
+});
 export default app;
