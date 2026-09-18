@@ -2,7 +2,7 @@ name: Explicit live source validation
 on:
   push:
     branches: ['fix/phase1-stabilization']
-    paths: ['.github/workflows/live-source-validation.yml', 'scripts/live-source-validation.ts', 'scripts/annual-source-inspection.py']
+    paths: ['.github/workflows/live-source-validation.yml','scripts/live-source-validation.ts','scripts/annual-source-inspection.py','scripts/annual-adapter-validation.ts']
 permissions:
   contents: read
 jobs:
@@ -18,12 +18,13 @@ jobs:
           node-version: '24'
       - run: corepack enable && corepack prepare pnpm@10.28.0 --activate
       - run: pnpm install --frozen-lockfile
-      - name: Read official source contracts and preserve raw evidence
+      - name: Read source contracts, preserve evidence, validate adapters without publishing
         run: |
           mkdir -p artifacts
           pnpm school source probe --all --out artifacts/source-probe.json > artifacts/source-probe.log
           pnpm exec tsx scripts/live-source-validation.ts
           python scripts/annual-source-inspection.py
+          pnpm exec tsx scripts/annual-adapter-validation.ts
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -32,6 +33,7 @@ jobs:
             artifacts/source-probe.json
             artifacts/source-probe.log
             artifacts/annual-source-contracts.json
+            artifacts/annual-review
             artifacts/live-*
             archive
           retention-days: 7

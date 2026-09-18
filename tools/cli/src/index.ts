@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { buildSource, probeSources, reviewBundle, importBundle, executeLocal, publicationSql, seedDemo } from './pipeline';
 import {reviewedEventsCommand} from './events';
+import {prepareAnnual,buildAnnual,importAnnual} from './annual';
 function localScript(script:string,args:string[]):void {
   const result=spawnSync(process.execPath,[fileURLToPath(new URL(`../../../scripts/${script}`,import.meta.url)),...args],{stdio:'inherit'});
   if(result.error)throw result.error;if(result.status!==0)throw new Error('Local command failed');
@@ -15,12 +16,17 @@ function publish(argv:{environment:string;'release-id':string;channel:string;'ex
   if(argv.environment!=='local')throw new Error('BLOCKED: remote publication not authorized or certified');
   executeLocal(publicationSql({id:argv['release-id'],channel:argv.channel,operation,revision:argv['expected-revision'],previous:argv['expected-previous-release-id']??null,actor:argv.actor}));
 }
+const annualOptions={input:{type:'string' as const,demandOption:true},baseline:{type:'string' as const,demandOption:true},edition:{type:'string' as const,demandOption:true},out:{type:'string' as const,demandOption:true}};
 void yargs(hideBin(process.argv))
 .command('source','Source contracts and baseline bundles',command=>command
   .command('probe','Explicit read-only source checks',{all:{type:'boolean',default:false},out:{type:'string',default:'artifacts/source-probe.json'}},argv=>probeSources(argv.out,argv.all))
   .command('build','Build S01 baseline, no implicit publication',{
     source:{type:'string',demandOption:true},level:{type:'string',choices:['KG','PRIMARY','SECONDARY'],demandOption:true},scope:{type:'string',choices:['full','canary'],default:'canary'},limit:{type:'number'},out:{type:'string',demandOption:true},input:{type:'string'},'reference-period':{type:'string'}
   },argv=>buildSource({source:argv.source,level:argv.level,scope:argv.scope,limit:argv.limit,out:argv.out,input:argv.input,referencePeriod:argv['reference-period']})).demandCommand(1))
+.command('annual','Annual profiles with reviewed canonical school identity',command=>command
+  .command('prepare','Produce unapproved cross-source identity candidates',annualOptions,argv=>prepareAnnual(argv as Parameters<typeof prepareAnnual>[0]))
+  .command('build','Build at most 15 explicitly reviewed annual rows',{...annualOptions,mapping:{type:'string',demandOption:true}},argv=>buildAnnual(argv as Parameters<typeof buildAnnual>[0]))
+  .command('import','Hash-bound local annual import, no automatic publication',{bundle:{type:'string',demandOption:true},reviewer:{type:'string',demandOption:true},'confirm-hash':{type:'string',demandOption:true},environment},argv=>importAnnual({bundle:argv.bundle,reviewer:argv.reviewer,confirmHash:argv['confirm-hash'],environment:argv.environment})).demandCommand(1))
 .command('review','Hash-bound human review',command=>command
   .command('prepare','Produce review package',{bundle:{type:'string',demandOption:true}},argv=>reviewBundle(argv.bundle))
   .command('approve','Confirm exact reviewed hash',{bundle:{type:'string',demandOption:true},reviewer:{type:'string',demandOption:true},'confirm-hash':{type:'string',demandOption:true}},argv=>reviewBundle(argv.bundle,argv.reviewer,argv['confirm-hash'])).demandCommand(1))
