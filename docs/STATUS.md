@@ -1,13 +1,13 @@
 # Current development status
 
-**Phase 1: IN_PROGRESS — stabilization, not release-ready.**
+**Phase 1: IN_PROGRESS — local technical checks passed; product/release acceptance remains incomplete.**
 
-The initial status at commit `7d04886` is retained in Git history and is superseded by this report.
+Code commit baa7793e83e376af2ab55cb27aac3065cd3ea0a1 passed GitHub Actions run 35362039037 on Node 24.20.0. Both regression and local-toolchain jobs succeeded.
 
-For executed commands, test counts, environment and remaining blockers, see [STABILIZATION_STATUS.md](STABILIZATION_STATUS.md). For all phases, see [ALL_PHASES_STATUS.md](ALL_PHASES_STATUS.md).
+Verified: 51 native regression cases, 65 Vitest cases, full workspace typecheck, lint, frontend build, Worker dry-run, local D1 migration/fixture and ten real local workerd HTTP checks.
 
-Current locally executed evidence: 51 native Node regression tests passed, 0 failed (Node 22.16.0, Linux). This includes real SQLite SQL tests but is not Cloudflare D1/workerd validation. No complete Node 24 dependency install/build or browser acceptance result is claimed. Read the actual CI run before changing those states.
+See [STABILIZATION_STATUS.md](STABILIZATION_STATUS.md) for exact evidence and limits. CI used bootstrap dependency resolution; its generated pnpm-lock.yaml still needs to be committed and frozen installation rerun. Browser/Windows and real school-data feature acceptance are not claimed.
 
-No Cloudflare deployment, remote migration, data import, cron activation or production publication was performed. Main is unchanged; changes are isolated to `fix/phase1-stabilization` for review.
+No Cloudflare remote deployment, database migration/import, cron activation or production publication was performed. Changes are isolated to fix/phase1-stabilization in Draft PR #1; main is unchanged.
 
-Next gate: validate Node 24 installation/typecheck/lint/unit/build/local Worker smoke, review and commit the resulting pnpm lockfile, then rerun frozen installation. Only after that should the source-to-local-search feature slice proceed.
+The previous initial-completion claims are superseded. Next gate: retain and commit the actual CI-generated lockfile, verify frozen installation and browser behavior, then implement a verified-source-to-local-search feature slice.

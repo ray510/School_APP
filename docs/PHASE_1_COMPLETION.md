@@ -1,9 +1,11 @@
-# Phase 1 completion claim withdrawn
+# Phase 1 acceptance status
 
-**Status: IN_PROGRESS.** The original report at commit `7d04886` incorrectly treated generated scaffolding as completed acceptance testing. It remains recoverable in Git history, but must not be used as release evidence.
+**IN_PROGRESS: local technical checks PASS, not unconditional product/release completion.**
 
-Current evidence and blockers are recorded in `STABILIZATION_STATUS.md` and `ALL_PHASES_STATUS.md`.
+The original 7d04886 report treated scaffolding as completed acceptance testing and is superseded. It remains recoverable in Git history.
 
-The stabilization patch fixes direct Hono bindings, the missing HTML entry, local-only commands, CSV corruption and fabricated normalizer metadata. It adds regression tests and a Node 24 CI workflow. A successful workflow, reviewed lockfile, actual local Worker/D1 smoke and the remaining acceptance criteria are still required before marking Phase 1 PASS.
+Code baa7793 passed GitHub Actions run 35362039037: Node 24 workspace typecheck/lint, 51 native regression tests, 65 Vitest tests, frontend build, Worker dry-run, local D1 migration/fixture and ten actual local HTTP checks.
 
-No remote Cloudflare operation is authorized by this document. `build:worker` is dry-run only. A running API does not imply that school data has been published.
+Remaining gates: commit and verify the real CI-generated pnpm lockfile using frozen install; browser acceptance; real school-data feature implementation and source verification. Detailed evidence and limits are in STABILIZATION_STATUS.md.
+
+No Cloudflare remote operation is authorized by this document. No remote deployment or database write occurred. A healthy local service with data_status empty is not a published school information platform.

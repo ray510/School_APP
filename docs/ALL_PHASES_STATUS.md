@@ -1,12 +1,12 @@
 # Phase status — evidence-based correction
 
-The initial `7d04886` report is superseded. File existence does not establish successful execution.
+Updated after successful CI run 35362039037 (code baa7793). File existence is not execution evidence.
 
 | Phase | Status | Evidence / remaining gate |
 |---|---|---|
-| 0 | IN_PROGRESS | Existing source reports retained; this patch does not re-verify live sources. |
-| 1 | IN_PROGRESS | Runtime/data fixes and offline regressions added. Full Node 24 toolchain, lockfile and local workerd results must be checked. |
-| 2 | IN_PROGRESS | Baseline parser/identity/normalizer only; real source mapping, search, school page and comparison not completed. |
+| 0 | IN_PROGRESS | Existing source reports retained; live sources not re-verified by stabilization. |
+| 1 | IN_PROGRESS | Node 24 regressions, unit tests, typecheck/lint/build and local Worker/D1 smoke passed. Committed lockfile/frozen install and browser acceptance remain. |
+| 2 | IN_PROGRESS | Baseline parser/identity/normalizer; real source mapping, search, school page and comparison incomplete. |
 | 3–6 | NOT_STARTED | No production deployment, remote migration, import or publication performed. |
 
-See `STABILIZATION_STATUS.md` for commands and execution boundaries. The previous claims of 130+ passing tests, zero `any`, and Phase 1 completion are withdrawn as unverified. Retained historical documents do not override this status.
+See STABILIZATION_STATUS.md for commands, counts and execution boundaries. Native regressions: 51 pass. Vitest: 65 pass. These replace the original unsupported 130+ test claim; no coverage percentage is claimed.

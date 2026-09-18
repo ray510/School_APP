@@ -1,52 +1,64 @@
-# Phase 1 stabilization — 2026-09-18
+# Phase 1 stabilization — verified CI evidence
 
-Base: `ray510/HK_APP`, `main` commit `7d04886264ddca498d859711689a2280f4ac9b32`.
-Branch: `fix/phase1-stabilization`. Main and Cloudflare resources are not changed by this work.
+Updated: 2026-09-18, after CI run 35362039037 completed.
+Repository: ray510/HK_APP. Branch: fix/phase1-stabilization. Main is unchanged.
+Tested code commit: baa7793e83e376af2ab55cb27aac3065cd3ea0a1.
+PR: https://github.com/ray510/HK_APP/pull/1
+CI: https://github.com/ray510/HK_APP/actions/runs/35362039037
 
-## Executed evidence
+## Actual execution results
 
-| Check | Status | Evidence / boundary |
+Environment: GitHub Actions Ubuntu 24.04.5; Node 24.20.0; pnpm 10.28.0; Wrangler 4.135.0.
+The initial attempt on 9ae0650 failed because generated local bindings omitted ASSETS. Explicit environment assets configuration fixed this; the subsequent full run succeeded.
+
+| Check | Status | Evidence |
 |---|---|---|
-| Native Node regression suite | PASS | `node scripts/run-regressions.mjs`: 51 passed, 0 failed, exit 0, Node 22.16.0 / Linux. |
-| SQLite SQL / fixture compatibility | PASS | Included above; actual original migration, ten tables, foreign keys, replay-safe synthetic fixture. Not D1 runtime validation. |
-| Parser / normalizer / readiness logic | PASS | Included above; no third-party dependencies. The test-only resolver maps the identity workspace export. |
-| Full workspace installation | BLOCKED | Execution sandbox cannot resolve registry.npmjs.org. No lockfile was fabricated. |
-| Node 24 full typecheck / lint / Vitest / Vite build | NOT_RUN | Added CI workflow; require actual run logs. Node 22 regressions are not full Node 24 acceptance. |
-| Wrangler dry-run, local migrations, HTTP smoke | NOT_RUN | Commands added but not executed in this sandbox. SQLite tests are not a substitute. |
-| Browser / Playwright | NOT_RUN | No browser acceptance claim. |
-| Cloudflare remote operations | NOT_RUN | No remote resources, migrations, seed, deployment, cron or publication. |
+| Bootstrap workspace installation | PASS | Actual pnpm install --no-frozen-lockfile; five workspace projects. |
+| Native Node regression suite | PASS | 51 passed, 0 failed; regression job 105655401590. Earlier isolated Node 22.16.0 run also passed. |
+| Full typecheck | PASS | Generated Wrangler types, contracts, Vue frontend, Worker and CLI. |
+| Lint | PASS | eslint with max-warnings 0. |
+| Vitest | PASS | 65 passed across 3 files: identity 33, CSV 22, Hono routing 10. |
+| Frontend build | PASS | Vite 5.4.21 generated dist/index.html and assets. This is not browser interaction testing. |
+| Worker build | PASS | wrangler deploy --dry-run; explicitly exited without deployment. |
+| Local D1 migration | PASS | 001_initial_schema.sql; 20 commands executed in local Wrangler storage. |
+| Synthetic fixture | PASS | 8 local commands; fake records are clearly labelled and unpublished. |
+| Real local workerd HTTP smoke | PASS | 10 checks: health, JSON API 404 for fetch/navigation, manifest, root and SPA fallback. data_status was correctly empty. |
+| Frozen-lock reproducibility | NOT_RUN | CI-generated pnpm-lock.yaml is an artifact, not yet committed. |
+| Browser / Playwright | NOT_RUN | No full browser acceptance claim. |
+| Windows local execution | NOT_RUN | Cross-platform scripts provided; execution evidence above is Linux. |
+| Live source-to-search feature | NOT_RUN | Real category/campus mappings, imports, search and comparison remain incomplete. |
+| Cloudflare remote operations | NOT_RUN | No deployment, remote migration/seed, cron or publication. |
 
-CI is separate evidence. Its result must be read after execution; the existence of the workflow is not a PASS.
+The 51 native cases and 65 Vitest cases are separate suites; they do not imply a measured coverage percentage or complete product acceptance.
 
-## Changes
+## Artifact
 
-- Direct `c.env.DB` / `c.env.ASSETS`; no `c.env.Bindings` runtime access.
-- Health reads APP_ENV, DB connectivity, recorded migration and published heads. Empty, missing and degraded are not called ready/published.
-- Missing frontend HTML entry restored; frontend validates the health contract and shows empty/error states.
-- CSV empty-quote bug fixed; strict UTF-8 or explicitly selected BIG5; malformed shape/HTML rejected. Short-row warnings block normalization.
-- School level comes only from an explicit reviewed category map. No name heuristic, default primary, fabricated full-day session or hard-coded snapshot date.
-- Duplicate source keys quarantined; unknown session encoded as UNKNOWN. Existing source-scoped school-ID hashing preserved (not UUID v5).
-- Root/per-workspace tsconfigs and scripts; generated Worker types; explicit non-watch test collection; real contracts workspace dependency.
-- Local-only migration/fixture/config/smoke commands; identical absolute persistence path from every working directory. Fixtures are synthetic and unpublished.
-- Historical completion claims superseded. Initial migration is unchanged.
+Run artifact: https://github.com/ray510/HK_APP/actions/runs/35362039037/artifacts/10554651030
+It contains pnpm-lock.yaml and the actual local Worker log.
+Lockfile SHA-256: d6fb8a29d25c2568c64a6102b59a741042e4a2afd3f49ba21c9fb08db493e639.
+The lockfile was downloaded and inspected: format 9.0, five importers, 429 package and snapshot entries, integrity-based package resolutions. This is not a dependency security audit.
+Review and commit the actual generated lockfile, then rerun --frozen-lockfile before a reproducibility/release claim. Do not reconstruct or invent lockfile entries. GitHub artifact retention is seven days; preserve a copy.
 
-## Toolchain and unresolved reproducibility
+## Implemented fixes
 
-Node 24.x and pnpm 10.28.0 are required for the full toolchain. Wrangler is pinned to the verified upstream release 4.135.0; vue-tsc is moved off the incompatible 1.x toolchain. Other existing dependency ranges are deliberately not advertised as locked. No claim of dependency security audit is made.
+- Direct c.env.DB / c.env.ASSETS access, environment-specific asset bindings, generated Worker types.
+- Health distinguishes service liveness, DB connectivity, recorded migration, empty data and actual published heads.
+- Restored frontend HTML entry and validated health states; no claim that search or real data is already available.
+- Strict CSV parsing fixes quoted empty fields, explicitly decodes BIG5 and rejects malformed or HTML responses.
+- Reviewed category mappings instead of name heuristics; unknown session remains UNKNOWN; duplicate keys are quarantined.
+- Source dates, snapshot IDs and mapping/parser versions come from supplied evidence, not hard-coded dates.
+- Workspace typecheck/build/test configuration; local-only migration, fixture, config and smoke commands.
+- Original initial migration and original source-scoped school ID algorithm preserved. No automatic production data approval.
 
-The bootstrap CI resolves dependencies only when no lockfile exists and saves the generated lockfile as an artifact. Review and commit it, then rerun with `--frozen-lockfile` before release. A green bootstrap run is not proof of a reproducible build. CI has read-only repository permissions and does not commit or deploy.
+## Remaining gates
 
-## Known remaining work
+Phase 1 remains IN_PROGRESS rather than unconditional COMPLETE: commit the generated lockfile and verify frozen installation, add browser acceptance, and retain explicit data-publication boundaries. Source probe/build and review commands remain BLOCKED where unimplemented.
 
-Real S01 category/session/campus mappings still need source evidence. S02–S04 are not newly verified. Search, comparison, admission events, cross-source identity reconciliation and publication controls are not completed. `source probe/build` and `review` deliberately fail with BLOCKED rather than pretending success.
+School search, school details/comparison, annual admissions events, cross-source identity reconciliation and production publication are not delivered by this stabilization patch. Do not deploy merely because the local checks pass.
 
-`pnpm test:e2e` remains NOT_RUN until real browser tests are provided. Production asset indexing, build-info validation, complete source lineage and release safety remain release gates in DEVELOPMENT.md. Do not enable admin writes or deploy this branch merely because regression tests pass.
+## Implementation references
 
-## Sources used for implementation
-
-- Hono bindings: https://hono.dev/docs/getting-started/cloudflare-workers#bindings
-- Wrangler command deprecations: https://developers.cloudflare.com/workers/wrangler/deprecations/
-- Wrangler configuration/types: https://developers.cloudflare.com/workers/wrangler/configuration/
-- Node TextDecoder: https://nodejs.org/api/util.html#class-utiltextdecoder
-- Wrangler pinned release: https://github.com/cloudflare/workers-sdk/releases/tag/wrangler%404.135.0
-- pnpm pinned release: https://github.com/pnpm/pnpm/releases/tag/v10.28.0
+- https://hono.dev/docs/getting-started/cloudflare-workers#bindings
+- https://developers.cloudflare.com/workers/wrangler/deprecations/
+- https://developers.cloudflare.com/workers/static-assets/binding/
+- https://nodejs.org/api/util.html#class-utiltextdecoder
