@@ -1,0 +1,35 @@
+name: Explicit live source validation
+on:
+  push:
+    branches: ['fix/phase1-stabilization']
+    paths: ['.github/workflows/live-source-validation.yml', 'scripts/live-source-validation.ts']
+permissions:
+  contents: read
+jobs:
+  source-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: corepack enable && corepack prepare pnpm@10.28.0 --activate
+      - run: pnpm install --frozen-lockfile
+      - name: Read official source contracts and preserve raw evidence
+        run: |
+          mkdir -p artifacts
+          pnpm school source probe --all --out artifacts/source-probe.json > artifacts/source-probe.log
+          pnpm exec tsx scripts/live-source-validation.ts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-source-canary-unpublished
+          path: |
+            artifacts/source-probe.json
+            artifacts/source-probe.log
+            artifacts/live-*
+            archive/edb-school-directory
+          retention-days: 7

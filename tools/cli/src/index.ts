@@ -4,11 +4,17 @@ import { hideBin } from 'yargs/helpers';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { buildSource, probeSources, reviewBundle, importBundle, executeLocal, publicationSql, seedDemo } from './pipeline';
+import {reviewedEventsCommand} from './events';
 function localScript(script:string,args:string[]):void {
   const result=spawnSync(process.execPath,[fileURLToPath(new URL(`../../../scripts/${script}`,import.meta.url)),...args],{stdio:'inherit'});
   if(result.error)throw result.error;if(result.status!==0)throw new Error('Local command failed');
 }
 const environment={type:'string' as const,choices:['local','staging','production'],default:'local'};
+const publicationOptions={'release-id':{type:'string' as const,demandOption:true},channel:{type:'string' as const,demandOption:true},'expected-revision':{type:'number' as const,demandOption:true},'expected-previous-release-id':{type:'string' as const},actor:{type:'string' as const,demandOption:true},environment};
+function publish(argv:{environment:string;'release-id':string;channel:string;'expected-revision':number;'expected-previous-release-id'?:string;actor:string},operation:'publish'|'rollback'){
+  if(argv.environment!=='local')throw new Error('BLOCKED: remote publication not authorized or certified');
+  executeLocal(publicationSql({id:argv['release-id'],channel:argv.channel,operation,revision:argv['expected-revision'],previous:argv['expected-previous-release-id']??null,actor:argv.actor}));
+}
 void yargs(hideBin(process.argv))
 .command('source','Source contracts and baseline bundles',command=>command
   .command('probe','Explicit read-only source checks',{all:{type:'boolean',default:false},out:{type:'string',default:'artifacts/source-probe.json'}},argv=>probeSources(argv.out,argv.all))
@@ -21,14 +27,12 @@ void yargs(hideBin(process.argv))
 .command('import','Plan or run a local-only import',command=>command
   .command('plan','Estimate, no database writes',{bundle:{type:'string',demandOption:true},environment},argv=>importBundle(argv.bundle,argv.environment,true))
   .command('run','Import at most 15 records, no automatic publish',{bundle:{type:'string',demandOption:true},environment},argv=>importBundle(argv.bundle,argv.environment)).demandCommand(1))
+.command('event','Review and import explicit source-evidenced events',command=>command
+  .command('prepare','Validate supplied event JSON and raw evidence',{input:{type:'string',demandOption:true},out:{type:'string',demandOption:true}},argv=>reviewedEventsCommand({input:argv.input,out:argv.out}))
+  .command('import','Require hash and explicit confirmation of every event ID',{input:{type:'string',demandOption:true},reviewer:{type:'string',demandOption:true},'confirm-hash':{type:'string',demandOption:true},'confirm-events':{type:'string',demandOption:true},environment},argv=>reviewedEventsCommand({input:argv.input,reviewer:argv.reviewer,confirmHash:argv['confirm-hash'],confirmEvents:argv['confirm-events'],environment:argv.environment})).demandCommand(1))
 .command('release','Atomic local publication and rollback',command=>command
-  .command(['publish','rollback'],'Compare-and-swap release head',{
-    'release-id':{type:'string',demandOption:true},channel:{type:'string',demandOption:true},'expected-revision':{type:'number',demandOption:true},'expected-previous-release-id':{type:'string'},actor:{type:'string',demandOption:true},environment
-  },argv=>{
-    if(argv.environment!=='local')throw new Error('BLOCKED: remote publication not authorized or certified');
-    const operation=String(argv._[1])==='rollback'?'rollback':'publish';
-    executeLocal(publicationSql({id:argv['release-id'],channel:argv.channel,operation,revision:argv['expected-revision'],previous:argv['expected-previous-release-id']??null,actor:argv.actor}));
-  }).demandCommand(1))
+  .command('publish','Compare-and-swap to approved release',publicationOptions,argv=>publish(argv as Parameters<typeof publish>[0],'publish'))
+  .command('rollback','Compare-and-swap to previous published release',publicationOptions,argv=>publish(argv as Parameters<typeof publish>[0],'rollback')).demandCommand(1))
 .command('demo','Explicit synthetic UI demo; local only',{environment},argv=>seedDemo(argv.environment))
 .command('fixture','Unpublished baseline fixture',command=>command.command('seed','Seed local unpublished test records',{environment},argv=>{if(argv.environment!=='local')throw new Error('Fixtures are local only');localScript('local.mjs',['fixture']);}).demandCommand(1))
 .command('config','Configuration safety checks',command=>command.command('check','Check local isolation',{environment,remote:{type:'boolean',default:false}},argv=>{if(argv.environment!=='local'||argv.remote)throw new Error('BLOCKED: remote preflight is not certified');localScript('local.mjs',['config']);}).demandCommand(1))
