@@ -3,9 +3,10 @@ export const Level = z.enum(['KG', 'PRIMARY', 'SECONDARY']);
 export const Year = z.coerce.number().int().min(2000).max(2100);
 export const Session = z.enum(['AM', 'PM', 'ALL_DAY', 'UNKNOWN']);
 export const SafeUrl = z.string().max(2048).url().refine(value => {
-  const url = new URL(value);
-  return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password;
-}, 'Only public HTTP(S) links are supported');
+  // Zod refinements can still run after a preceding URL check fails.
+  try {const url=new URL(value);return ['http:','https:'].includes(url.protocol)&&!url.username&&!url.password;}
+  catch {return false;}
+}, 'Only HTTP(S) links without credentials are supported');
 export const DateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value => {
   const date = new Date(value + 'T00:00:00Z');
   return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
@@ -98,6 +99,6 @@ export const AdmissionEvent = z.object({
   source_url: SafeUrl, verified: z.literal(true), reviewed_at: z.string().datetime()
 }).strict().refine(event => {
   if (event.starts_on) return !event.starts_at && !event.ends_at && (!event.ends_on || event.ends_on >= event.starts_on);
-  return !!event.starts_at && !!event.ends_at && !event.ends_on && event.ends_at > event.starts_at;
+  return !!event.starts_at && !!event.ends_at && !event.ends_on && Date.parse(event.ends_at) > Date.parse(event.starts_at);
 }, 'Use either date-only or an exact UTC interval, never inferred times');
 export type PublicEvent = z.infer<typeof AdmissionEvent>;

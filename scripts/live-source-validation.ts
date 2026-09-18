@@ -1,10 +1,10 @@
-/** Explicit live source validation. Not part of offline unit tests; never publishes. */
+/** Explicit live source validation, including real N.A. URL regression. Never publishes. */
 import {readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {buildSource,readBundle} from '../tools/cli/src/pipeline';
 const report=JSON.parse(readFileSync('artifacts/source-probe.json','utf8')) as {sources:Array<{source_id:string;status:string;archive?:string;resources?:Array<{url:string;format:string;name?:string}>;reason?:string}>};
 for(const source of report.sources){
-  console.log(JSON.stringify({source_id:source.source_id,status:source.status,reason:source.reason,resource_count:source.resources?.length,csv_candidates:source.resources?.filter(resource=>resource.format?.toLowerCase()==='csv').slice(-5)}));
+  console.log(JSON.stringify({source_id:source.source_id,status:source.status,reason:source.reason,resource_count:source.resources?.length,csv_candidates:source.resources?.filter(resource=>resource.format?.toLowerCase()==='csv'&&resource.name?.includes('Traditional Chinese'))}));
 }
 const source=report.sources.find(value=>value.source_id==='edb-school-directory');
 if(source?.status!=='LIVE_VERIFIED'||!source.archive)throw new Error('S01 live structural validation failed');

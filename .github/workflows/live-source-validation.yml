@@ -2,7 +2,7 @@ name: Explicit live source validation
 on:
   push:
     branches: ['fix/phase1-stabilization']
-    paths: ['.github/workflows/live-source-validation.yml', 'scripts/live-source-validation.ts']
+    paths: ['.github/workflows/live-source-validation.yml', 'scripts/live-source-validation.ts', 'scripts/annual-source-inspection.py']
 permissions:
   contents: read
 jobs:
@@ -23,6 +23,7 @@ jobs:
           mkdir -p artifacts
           pnpm school source probe --all --out artifacts/source-probe.json > artifacts/source-probe.log
           pnpm exec tsx scripts/live-source-validation.ts
+          python scripts/annual-source-inspection.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -30,6 +31,7 @@ jobs:
           path: |
             artifacts/source-probe.json
             artifacts/source-probe.log
+            artifacts/annual-source-contracts.json
             artifacts/live-*
-            archive/edb-school-directory
+            archive
           retention-days: 7
