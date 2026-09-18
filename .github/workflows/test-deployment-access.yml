@@ -1,0 +1,50 @@
+name: Test deployment access (read only)
+on:
+  push:
+    branches: [fix/phase1-stabilization]
+    paths: [.github/workflows/test-deployment-access.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  cloudflare-access:
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 3
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID }}
+    steps:
+      - name: Verify credentials and target zone without printing secrets
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os, json, urllib.request, urllib.parse, sys
+          token=os.environ.get('CLOUDFLARE_API_TOKEN','')
+          account=os.environ.get('CLOUDFLARE_ACCOUNT_ID','')
+          report={'hostname':'schools-test.finpulsx.win','writes_performed':False,'token_present':bool(token),'account_configured':bool(account)}
+          def finish(status,reason,code):
+            report.update(status=status,reason=reason)
+            print(json.dumps(report))
+            with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as f:
+              f.write('## Cloudflare test deployment access\n```json\n'+json.dumps(report,indent=2)+'\n```\n')
+            sys.exit(code)
+          if not token:
+            finish('BLOCKED_MISSING_CREDENTIALS','No CLOUDFLARE_API_TOKEN or CF_API_TOKEN is available to the staging job. No provider request or write was attempted.',1)
+          def get(path):
+            req=urllib.request.Request('https://api.cloudflare.com/client/v4'+path,headers={'Authorization':'Bearer '+token,'Accept':'application/json'})
+            with urllib.request.urlopen(req,timeout=20) as r: data=json.load(r)
+            if not data.get('success'): raise RuntimeError('Provider rejected read request')
+            return data['result']
+          try:
+            zones=get('/zones?name=finpulsx.win&per_page=50')
+            zones=[z for z in zones if z.get('name')=='finpulsx.win' and z.get('status')=='active' and (not account or z.get('account',{}).get('id')==account)]
+            if len(zones)!=1: finish('BLOCKED_ZONE','Exactly one active owned finpulsx.win zone was not found.',1)
+            zone=zones[0]; account=zone['account']['id']
+            records=get('/zones/'+zone['id']+'/dns_records?name=schools-test.finpulsx.win&per_page=100')
+            dbs=get('/accounts/'+account+'/d1/database?per_page=100')
+            report.update(active_zone_verified=True,existing_hostname_records=len(records),existing_test_databases=sum(d.get('name')=='hk-school-guide-test-db' for d in dbs))
+            finish('READ_ACCESS_VERIFIED','Zone, target DNS and D1 list reads succeeded. Write permissions, quota and deployment still require checks.',0)
+          except Exception as e:
+            finish('BLOCKED_PROVIDER_ACCESS',type(e).__name__+': provider read failed; no secret values or response bodies logged.',1)
+          PY
