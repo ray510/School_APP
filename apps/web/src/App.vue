@@ -1,46 +1,13 @@
 <template>
-  <div class="app">
-    <header>
-      <h1>香港年度選校資訊平台</h1>
-      <p class="subtitle">Phase 1 開發中</p>
-    </header>
-    <main>
-      <RouterView />
-    </main>
-  </div>
+  <a class="skip-link" href="#main">跳至主要內容</a>
+  <header class="site-header">
+    <div class="shell header-row"><RouterLink class="brand" to="/">香港選校年鑑 <small>開發預覽</small></RouterLink>
+      <nav aria-label="主要導覽"><RouterLink to="/schools?level=PRIMARY&amp;year=2027">選校資料</RouterLink><RouterLink to="/shortlist">私人清單</RouterLink><RouterLink to="/calendar">招生日曆</RouterLink><RouterLink to="/sources">資料來源</RouterLink></nav>
+    </div>
+  </header>
+  <main id="main" class="shell" tabindex="-1"><RouterView /></main>
+  <footer class="shell footer">非官方平台。概覽資料不等於當屆收生安排；請核對學校及教育局最新公告。<RouterLink to="/about">私隱與資料限制</RouterLink></footer>
 </template>
-
 <script setup lang="ts">
-import { RouterView } from 'vue-router';
+import { RouterLink, RouterView } from 'vue-router';
 </script>
-
-<style scoped>
-.app {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 20px;
-}
-
-header {
-  text-align: center;
-  margin-bottom: 40px;
-  border-bottom: 1px solid #eee;
-  padding-bottom: 20px;
-}
-
-h1 {
-  margin: 0 0 8px 0;
-  font-size: 28px;
-}
-
-.subtitle {
-  color: #666;
-  margin: 0;
-  font-size: 14px;
-}
-
-main {
-  min-height: calc(100vh - 200px);
-}
-</style>

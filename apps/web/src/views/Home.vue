@@ -1,47 +1,11 @@
 <template>
-  <main class="home">
-    <h2>香港年度選校資訊平台</h2>
-    <p>開發中：學校搜尋、比較及年度招生資訊尚未開放。</p>
-    <section aria-labelledby="status-heading" aria-live="polite">
-      <h3 id="status-heading">系統狀態</h3>
-      <p v-if="loading">正在讀取狀態…</p>
-      <p v-else-if="error" role="alert">{{ error }}</p>
-      <dl v-else-if="health">
-        <dt>環境</dt><dd>{{ health.environment }}</dd>
-        <dt>資料庫</dt><dd>{{ health.database }}</dd>
-        <dt>服務狀態</dt><dd>{{ health.readiness }}</dd>
-        <dt>公開資料</dt><dd>{{ health.data_status === 'published' ? '已有公開版本' : '未有可用的公開資料' }}</dd>
-        <dt>核對時間</dt><dd>{{ new Date(health.timestamp).toLocaleString('zh-HK', { timeZone: 'Asia/Hong_Kong' }) }}（香港時間）</dd>
-      </dl>
-      <p>服務能回應，並不代表已有正式學校資料。未公布的日期不會以示範資料填補。</p>
-    </section>
-  </main>
+  <section class="hero"><p class="eyebrow">香港 · 幼稚園 · 小學 · 中學</p><h1>把選校資料，整理成下一步。</h1><p>按入學年份瀏覽學校、並排比較，再用私人清單跟進。每項資料保留來源；當屆尚未公布的日期不會由往年推算。</p></section>
+  <form class="panel filters" @submit.prevent="start"><label>入學學年<select v-model="year"><option v-for="y in years" :key="y" :value="y">{{ y }}/{{ y+1 }}</option></select></label><label>學段<select v-model="level"><option value="KG">幼稚園</option><option value="PRIMARY">小學</option><option value="SECONDARY">中學</option></select></label><button type="submit">開始選校</button></form>
+  <div class="grid"><article class="card"><h2>同一口徑比較</h2><p>每次比較最多四校，固定同一學段及資料版本。未知、免費及不適用分開顯示。</p></article><article class="card"><h2>私人清單只留本機</h2><p>筆記及申請進度存在此瀏覽器。可匯出備份；不要求兒童姓名、成績或身份證明。</p></article><article class="card"><h2>年度安排不混用</h2><p>概覽版本與入學學年不同。未核實的招生事件不會加入官方日曆。</p></article></div>
+  <p class="notice">開發预覽：沒有已發佈資料時會顯示空狀態。本機啟用 synthetic demo 後，所有測試學校均會清楚標示。</p>
 </template>
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
-import { HealthResponseSchema, type HealthResponse } from '@hk-school/contracts';
-const health = ref<HealthResponse | null>(null);
-const loading = ref(true);
-const error = ref('');
-onMounted(async () => {
-  try {
-    const response = await fetch('/api/v1/health', { signal: AbortSignal.timeout(10000) });
-    const body: unknown = await response.json();
-    if (!body || typeof body !== 'object' || !('data' in body)) throw new Error('Invalid response');
-    const result = HealthResponseSchema.safeParse(body.data);
-    if (!result.success) throw new Error('Invalid health contract');
-    if (!response.ok && response.status !== 503) throw new Error('Unexpected response');
-    health.value = result.data;
-  } catch {
-    error.value = '未能取得系統狀態。請確認本機 Worker 已啟動。';
-  } finally {
-    loading.value = false;
-  }
-});
+import { ref } from 'vue';import { useRouter } from 'vue-router';
+const current=new Date().getFullYear();const years=Array.from({length:4},(_,i)=>current+i);const year=ref(current+1);const level=ref('PRIMARY');const router=useRouter();
+function start(){void router.push({path:'/schools',query:{level:level.value,year:year.value}});}
 </script>
-<style scoped>
-.home { max-width: 760px; margin: auto; padding: 24px; line-height: 1.7; }
-section { margin-top: 24px; border: 1px solid #ddd; border-radius: 8px; padding: 20px; }
-dl { display: grid; grid-template-columns: 100px 1fr; gap: 8px; }
-dd { margin: 0; overflow-wrap: anywhere; }
-</style>
