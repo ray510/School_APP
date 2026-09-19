@@ -8,7 +8,7 @@
   <p v-else-if="error" role="alert" class="alert">{{ error }} <button @click="load">重新載入</button></p>
   <template v-else-if="manifest&&schools.length>=2">
    <KGDecisionComparison v-if="schools.every(s=>s.level==='KG')" :schools="schools" :year="year" :sources="manifest.sources" :cohort="cohort" />
-   <InsightPanel :ids="schools.map(s=>s.id)" :data-id="manifest.data_id" /><section class="panel" aria-labelledby="jev-comparison-heading" data-testid="jev-comparison">
+   <OfficialComparisonPanel :schools="schools" :data-id="manifest.data_id" :year="year" /><InsightPanel :ids="schools.map(s=>s.id)" :data-id="manifest.data_id" /><section class="panel" aria-labelledby="jev-comparison-heading" data-testid="jev-comparison">
     <div class="heading"><div><p class="eyebrow">JEV EVIDENCE COMPARISON</p><h2 id="jev-comparison-heading">JEV 證據比較</h2></div><button @click="exportComparison">匯出比較分析 JSON</button></div>
     <p>使用已發布的 JEV 分析結果，並由程式整理共同點及記載差異；本頁不即時重跑模型，也不傳送你的私人筆記。</p>
     <p class="notice">目標入學學年：{{ year }}/{{ year+1 }}。分析以原文概覽版本及送審片段為準，並非當屆服務保證。待覆核、未分析、回應無效及未提及分開顯示；模型結果尚未經真人標註集校準。</p>
@@ -37,6 +37,7 @@
  </main><footer class="wrap"><strong>香港選校年鑑</strong><p>獨立非官方平台 · JEV 原文分析不是學校評分</p><RouterLink to="/sources">來源及完整性</RouterLink> · <RouterLink to="/about">私隱</RouterLink></footer>
 </template>
 <script setup lang="ts">
+import OfficialComparisonPanel from './OfficialComparisonPanel.vue';
 import InsightPanel from './InsightPanel.vue';
 import {computed,ref,watch} from 'vue';
 import {RouterLink,useRoute} from 'vue-router';
