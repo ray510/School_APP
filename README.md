@@ -2,13 +2,44 @@
 
 香港幼稚園、小學及中學的年度選校工具。Vue 3 + TypeScript + Hono + Cloudflare Workers Static Assets + D1。
 
-**目前交付：本機可運行、已有實際 CI 驗收的 MVP；不是已完成全港資料審核或 production 上線。** 程式驗證、資料覆蓋及部署是三個獨立門檻。
+**目前交付：已上線並完成線上驗收的北區三學段試點。** 包含 30 個已配對的學校／校址年度資料項目、15 項有來源證據及適用條件的招生事件，以及比較、私人清單與 ICS 流程。這不是全港資料已核實或 production 正式上線。
 
-工作分支：`fix/phase1-stabilization`；Draft PR：<https://github.com/ray510/HK_APP/pull/1>。`main` 尚未合併。
+測試站：<https://schools-test.finpulsx.win>
 
-## 開始使用
+建議入口：<https://schools-test.finpulsx.win/schools?level=PRIMARY&year=2027&has_annual=1>
 
-需要 Node 24.x、pnpm 10.28.0。以下 PowerShell 指令不會部署或寫入遠端 D1。切換分支前請先保存現有未提交修改；不要使用 reset --hard。
+## 最新驗收
+
+- 已部署程式 commit：`cee3fc3f06560e98a8d2e4fdd7b7398ca879753c`。
+- 最後測試修正：`b29ea6d10b4d479bf545aa54f64335cc90aed4ad`；等待 IndexedDB 儲存完成才導航／刷新，保留持久化及不傳送筆記的斷言。
+- [Reviewed school pilot delivery — run 35425446270](https://github.com/ray510/HK_APP/actions/runs/35425446270)：prepare / deploy **success**。
+- `LIVE_VERIFIED`：`2026-09-19T06:03:52.290Z`；其後線上 desktop / mobile Chromium **4 passed**。
+- 完整證據、資料限制、備份與恢復邊界：[docs/PILOT_LIVE_ACCEPTANCE.md](docs/PILOT_LIVE_ACCEPTANCE.md)。
+
+本次 70 項 Node 回歸、111 項 Vitest、13 項 Python SQLite publication 測試、本機及線上各 4 項 Chromium 流程通過。執行環境是 GitHub Actions Ubuntu / Node 24，沒有宣稱在使用者 Windows 或 production 驗收。
+
+工作分支：`fix/phase1-stabilization`；[Draft PR #1](https://github.com/ray510/HK_APP/pull/1)。本輪未合併 main。後續文件 commit 不等於已部署程式版本。
+
+## 已實作功能
+
+| 功能 | 範圍 |
+|---|---|
+| 學校搜尋及詳情 | 三學段、入學學年、校名、來源地區及資助類別；固定 release 分頁 |
+| 試點年度資料 | 北區各學段 10 個配對項目；年度摘要、原文、識別及來源證據 |
+| 最多四校比較 | 同學段比較；年度資料保留來源版本、所屬時期及未知狀態 |
+| 私人清單 | IndexedDB 本機儲存、筆記、進度、JSON 備份及匯入衝突預覽、跨分頁 revision 檢查 |
+| 招生日曆 | 15 項已發佈、有證據及適用條件的事件；date-only 與確切時間分開、ICS 匯出 |
+| 私人事件 | 只存瀏覽器，與官方公告分開；隨私人 JSON 備份匯出 |
+| 資料流程 | 原始 hash、來源審閱、immutable 版本、CAS 發佈及 audit；相同資料重播不重複發佈 |
+| 部署保護 | 測試主機與既有 D1 限定、寫入前備份、帳戶額度檢查、noindex、無 HTTP 管理寫入 |
+
+基本名錄仍為 partial；原始來源紀錄不等於去重後獨立學校數。未納入試點的年度原文繼續獨立展示。15 項事件包含共同或有條件程序，並非每間學校都有個別招生公告。試點配對屬 assistant-assisted source review，`human_review=false`，不是官方認證。
+
+學校名錄不是招生資格或錄取概率。未知欄位不由去年日期或虛構數字填補。歷史概覽不因選擇 2027 入學而成為 2027 已確認收費。CSV 文字不當 HTML 執行，學校自述不轉成平台排名。
+
+## 本機開始使用
+
+需要 Node 24.x、pnpm 10.28.0。以下 PowerShell 指令只操作本機。切換分支前先保存未提交修改，不要使用 reset --hard。
 
 ```powershell
 git fetch origin
@@ -20,54 +51,14 @@ pnpm install --frozen-lockfile
 pnpm build:web
 pnpm db:migrate:local
 pnpm fixture:local
-# 可選：新增明確標示為測試的學校，純本機示範
+# 以下為純本機示範，不是真實學校
 pnpm school demo --environment local
 pnpm dev:worker
 ```
 
-瀏覽 `http://127.0.0.1:8787`。另一個終端執行 `pnpm dev:web` 可用 5173 前端熱更新，API 轉送本機 8787。示範學校、地址及費用不是真實資料；若已有正式資料 channel，搜尋會優先使用它。
+瀏覽 `http://127.0.0.1:8787`。另一終端的 `pnpm dev:web` 使用 5173，API 轉送本機 8787。若 8787 已被其他程序佔用，先確認程序用途，不要擅自結束其他服務。
 
-Windows 指令已提供；實際自動驗收環境是 GitHub Actions Ubuntu + Node 24，不冒稱已在你的 Windows 電腦實跑。
-
-## 已實作功能
-
-| 功能 | 範圍 |
-|---|---|
-| 學校搜尋及詳情 | 三學段、入學學年、校名、來源地區及資助類別；固定 release 分頁 |
-| 最多四項比较 | 同學段、同一資料版本；區分零元、未知與不適用 |
-| 年度概覽 | 三個來源專用 parser、身份配對待審清單、hash 審核、版本 API、詳情頁原始欄位及來源證據 |
-| 私人清單 | IndexedDB 本機儲存、筆記、申請進度、JSON 備份及匯入衝突預覽、跨分頁 revision 檢查 |
-| 招生日曆 | 僅展示已核實已發佈事件、date-only 與確切時間分開、ICS 匯出 |
-| 私人事件 | 只存瀏覽器，與官方公告分開；隨私人 JSON 備份匯出 |
-| 資料流程 | 明確來源下載、raw hash 保存、canary、hash 綁定審核、本機 import、原子發佈及回滾 |
-| 建置與防誤部署 | 環境 metadata、robots、安全標頭、offline preflight、遠端寫入預設拒絕 |
-
-學校名錄不是招生資格或錄取概率。沒有資料時顯示空狀態，不用去年日期或虛構數字填滿畫面。年度 CSV 文字以文字呈現，不作 HTML 執行；學校自述不轉成平台評分。
-
-## 真實來源流程
-
-```powershell
-pnpm school source probe --all --out artifacts/source-probe.json
-pnpm school source build --source edb-school-directory --level PRIMARY --scope canary --limit 5 --out artifacts/primary-canary
-pnpm school review prepare --bundle artifacts/primary-canary
-```
-
-先核對 `review.json`、`coverage.json` 及官方原文，再用確切 manifest hash 批准：
-
-```powershell
-pnpm school review approve --bundle artifacts/primary-canary --reviewer YOUR_OPERATOR_ID --confirm-hash EXACT_REVIEWED_HASH
-pnpm school import plan --bundle artifacts/primary-canary --environment local
-pnpm school import run --bundle artifacts/primary-canary --environment local
-pnpm school release publish --release-id EXACT_RELEASE_ID --channel profiles:PRIMARY --expected-revision 0 --actor YOUR_OPERATOR_ID --environment local
-```
-
-最後一行只適用於該 channel 首次發佈。已有 head 時必須使用實際 revision 及 `--expected-previous-release-id`。過期 CAS、未審核 hash、數量不符或以小樣本覆蓋全量均會拒絕。
-
-**canary 不是完整名錄。** 重複校號全部隔離，特殊學校明確列出未覆蓋；未確認班別保留 UNKNOWN。HTTP Last-Modified 不當成資料所述學年。
-
-年度概覽及招生事件操作詳見 [docs/ANNUAL_DATA_OPERATIONS.md](docs/ANNUAL_DATA_OPERATIONS.md)。三份年度來源已以真實 raw 驗證 parser，但跨來源候選沒有自動批准，全量年度資料沒有自動發佈。
-
-## 驗證
+## 測試
 
 ```powershell
 pnpm typecheck
@@ -77,25 +68,24 @@ pnpm exec tsx tests/integration/prepare.ts
 python tests/integration/publication.py
 pnpm build:web
 pnpm build:worker
-# 本機 Worker 啟動、demo 已加入後：
-node tests/integration/catalog-http.mjs
-pnpm --filter @hk-school/web exec playwright install chromium
-pnpm test:e2e
 ```
 
-`build:worker` 只 dry-run，不上傳。`pnpm test` 不包含 Python／瀏覽器驗收；CI 另行執行這些套件。
+`build:worker` 是 dry-run，不上傳。`pnpm test` 不包含 Python 或瀏覽器測試；完整 CI 會另行執行。試點 Playwright 需要正確的真實試點資料；一般本機 demo 不能代替。
 
-已驗證程式 commit：`39594dc525ceccb69e31527798c66810b4517daf`。
+## 更新測試站
 
-- 本機全套驗收：<https://github.com/ray510/HK_APP/actions/runs/35366624076> — success。
-- 真實來源及三份年度 parser：<https://github.com/ray510/HK_APP/actions/runs/35366620214> — success。
+本輪使用 `.github/workflows/pilot-delivery.yml` 和 `scripts/pilot-deploy.mjs`。只更新 `schools-test.finpulsx.win`、既有 `hk-school-guide-test` 與已核對的 D1；沒有新建資料庫。實際遠端 ledger 為 001–005。
 
-檢查定義、限制及未完成門檻見 [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md)。GitHub CI success 不等於已完成 production 或資料人工審核。
+API Token 只由 GitHub staging secret 注入部署步驟，不要提交或貼出 Token。必須保留 prepare 成功門檻、審核及帳戶額度檢查。新資料發佈前仍需更新對應來源審閱與版本，不要靠略過 release 衝突強行更新。
 
-## 部署邊界
+一般 `pnpm school` import/publish 工具仍有其 local-only 限制；不要將專用、已授權 staging updater 與未完成的通用 production importer 混為一談。
 
-所有新增 import／publish 命令只支持 local；沒有遠端 migration、seed、cron、付費服務或 production 部署。`scripts/deployment-preflight.mjs` 只驗證本機配置及提供的額度觀察，並不代替已授權的遠端帳戶檢查。
+基礎名錄部署與資料包重用方式：[docs/TEST_SITE_DEPLOYMENT.md](docs/TEST_SITE_DEPLOYMENT.md)。年度資料操作：[docs/ANNUAL_DATA_OPERATIONS.md](docs/ANNUAL_DATA_OPERATIONS.md)。較早狀態文件僅代表其所標日期及 commit；本輪現況以 [docs/PILOT_LIVE_ACCEPTANCE.md](docs/PILOT_LIVE_ACCEPTANCE.md) 為準。
 
-完整開發及部署規格仍在 `DEVELOPMENT.md`、`DEPLOY_CLOUDFLARE.md`；其中遠端 importer/reviewer、durable archive、staging／production 步驟並非本版全部完成。不要因為文件存在就執行未實作的部署命令。
+## 備份及未完成的正式營運門檻
 
-正式上線前仍須完成資料配對覆核、招生事件維護、production 權限、帳戶總額度、持久備份、成本量測及 staging canary 驗收。私人資料不會由本平台同步到伺服器；請避免在筆記填寫兒童身份證明、成績或其他敏感資料。
+本次 `reviewed-pilot-package` 及 `reviewed-pilot-live-evidence` artifact 保留至 2026-12-18；後者包含寫入前 `before.sql`、hash、版本記錄及線上截圖。此為有期限的備份，不是永久封存。不可直接將備份 SQL 覆蓋匯入現有非空資料庫。
+
+正式營運仍須擴展資料配對與當屆公告覆核、持久備份、production 權限、安全及成本評估；本輪沒有修改主站、其他子網域、production、cron 或付款方案。
+
+私人筆記及申請進度只存家長瀏覽器，沒有伺服器同步；請避免填寫兒童身份證明、成績或其他敏感資料，並自行定期匯出備份。
