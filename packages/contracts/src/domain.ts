@@ -50,7 +50,8 @@ export const Search = z.object({
   funding: z.string().max(120).default(''),
   limit: z.coerce.number().int().min(1).max(40).default(20),
   cursor: z.string().max(2048).optional(),
-  release: z.string().min(1).max(120).optional()
+  release: z.string().min(1).max(120).optional(),
+  has_annual: z.enum(['1']).optional()
 }).strict();
 export const PrivateEntry = z.object({
   school_id: Profile.shape.school_id,
@@ -96,7 +97,12 @@ export const AdmissionEvent = z.object({
   school_id: Profile.shape.school_id.nullable(),
   starts_on: DateOnly.nullable(), ends_on: DateOnly.nullable(),
   starts_at: z.string().datetime().nullable(), ends_at: z.string().datetime().nullable(),
-  source_url: SafeUrl, verified: z.literal(true), reviewed_at: z.string().datetime()
+  source_url: SafeUrl, verified: z.literal(true), reviewed_at: z.string().datetime(),
+  kind: z.enum(['window','deadline','announcement','interview_window']).optional(),
+  description: z.string().max(2000).optional(),
+  applicability: z.string().max(1000).optional(),
+  evidence_sha256: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+  reviewer: z.string().max(100).optional()
 }).strict().refine(event => {
   if (event.starts_on) return !event.starts_at && !event.ends_at && (!event.ends_on || event.ends_on >= event.starts_on);
   return !!event.starts_at && !!event.ends_at && !event.ends_on && Date.parse(event.ends_at) > Date.parse(event.starts_at);

@@ -27,7 +27,7 @@ export function toCalendar(events: PublicEvent[], now = new Date().toISOString()
     } else {
       lines.push(`DTSTART:${utc(event.starts_at!)}`, `DTEND:${utc(event.ends_at!)}`);
     }
-    lines.push(`URL:${escapeText(event.source_url)}`, 'DESCRIPTION:請以官方最新安排為準；日期不代表已獲安排個人面試。','END:VEVENT');
+    lines.push(`URL:${escapeText(event.source_url)}`, `DESCRIPTION:${escapeText([event.applicability,event.description,'請以官方最新安排為準；日期不代表已獲安排個人面試。'].filter(Boolean).join('\n'))}`,'END:VEVENT');
   }
   lines.push('END:VCALENDAR'); return lines.map(foldLine).join('\r\n') + '\r\n';
 }

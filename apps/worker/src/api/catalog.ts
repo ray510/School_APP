@@ -24,7 +24,7 @@ function unpack(content:string){return Profile.parse(JSON.parse(content));}
 function parseQuery(c:C){const params=c.req.query();return Search.parse({...params,year:params.year??new Date().getUTCFullYear()+1});}
 api.use('*',async(c,next)=>{if(c.get('environment')==='invalid'||!c.env?.DB)return c.json({error:{code:'NOT_READY',message:'環境或資料庫未就緒'},meta:meta(c,null)},503);await next();});
 api.get('/schools',async c=>{
-  const query=parseQuery(c);const context={level:query.level,q:query.q,district:query.district,funding:query.funding};let last='';let pinned=query.release;
+  const query=parseQuery(c);const context={level:query.level,q:query.q,district:query.district,funding:query.funding,has_annual:query.has_annual};let last='';let pinned=query.release;
   if(query.cursor){
     let cursor:unknown;try{cursor=JSON.parse(decodeURIComponent(atob(query.cursor)));}catch{throw new InputError('無效分頁游標');}
     const parsed=z.object({release:z.string().max(120),last:z.string().max(240),context:z.string().max(1400)}).strict().parse(cursor);
@@ -34,6 +34,7 @@ api.get('/schools',async c=>{
   if(!release)return c.json({data:[],meta:meta(c,null,{next_cursor:null,entry_year:query.year,admission_status:'not_verified'})});
   const clauses=['s.release_id=?','s.level=?','s.item_key>?'];const params:Array<string|number>=[release.release_id,query.level,last];
   if(!permitTest(c))clauses.push('s.is_test=0');
+  if(query.has_annual)clauses.push("EXISTS(SELECT 1 FROM annual_profile_versions a JOIN annual_release_items ai ON ai.annual_profile_id=a.annual_profile_id JOIN release_heads ah ON ah.release_id=ai.release_id JOIN release_manifests am ON am.release_id=ah.release_id AND am.channel=ah.channel WHERE a.school_id=s.school_id AND a.level=s.level AND a.identity_verified=1 AND a.is_test=0 AND ah.channel LIKE 'annual:%' AND am.status='PUBLISHED')");
   if(query.q){clauses.push('instr(s.normalized_name,?)>0');params.push(query.q);}if(query.district){clauses.push('s.district=?');params.push(query.district);}if(query.funding){clauses.push('s.funding=?');params.push(query.funding);}
   const result=await c.env.DB.prepare(`SELECT s.item_key,p.content_json FROM school_search s JOIN profile_versions p ON p.profile_version_id=s.profile_version_id WHERE ${clauses.join(' AND ')} ORDER BY s.item_key LIMIT ?`).bind(...params,query.limit+1).all<{item_key:string;content_json:string}>();
   const more=result.results.length>query.limit;const rows=result.results.slice(0,query.limit);
@@ -58,7 +59,8 @@ api.get('/compare',async c=>{
 api.get('/sources',async c=>{const result=await c.env.DB.prepare('SELECT source_id,catalog_url,publisher,contract_status,enabled,last_checked_at,last_successful_fetch_at FROM sources ORDER BY source_id LIMIT 30').all();return c.json({data:result.results,meta:meta(c,null)});});
 async function events(c:C){
   const level=Level.parse(c.req.query('level'));const year=Year.parse(c.req.query('year'));
-  const result=await c.env.DB.prepare("SELECT e.content_json FROM release_heads h JOIN release_manifests m ON m.release_id=h.release_id AND m.channel=h.channel JOIN event_release_items i ON i.release_id=m.release_id JOIN event_versions e ON e.event_version_id=i.event_version_id WHERE m.status='PUBLISHED' AND h.channel LIKE 'events:%' AND e.level=? AND e.entry_year_start=? AND e.verified=1 AND e.is_test=0 ORDER BY e.starts_sort,e.event_id LIMIT 201").bind(level,year).all<{content_json:string}>();
+  const school=z.string().regex(/^sch_[a-zA-Z0-9_-]{1,80}$/).optional().parse(c.req.query('school'));
+  const result=await c.env.DB.prepare("SELECT e.content_json FROM release_heads h JOIN release_manifests m ON m.release_id=h.release_id AND m.channel=h.channel JOIN event_release_items i ON i.release_id=m.release_id JOIN event_versions e ON e.event_version_id=i.event_version_id WHERE m.status='PUBLISHED' AND h.channel LIKE 'events:%' AND e.level=? AND e.entry_year_start=? AND e.verified=1 AND e.is_test=0 AND (? IS NULL OR e.school_id IS NULL OR e.school_id=?) ORDER BY e.starts_sort,e.event_id LIMIT 201").bind(level,year,school??null,school??null).all<{content_json:string}>();
   if(result.results.length>200)throw new InputError('事件超過匯出上限，請縮窄收生範圍');return result.results.map(row=>AdmissionEvent.parse(JSON.parse(row.content_json)));
 }
 api.get('/events',async c=>c.json({data:await events(c),meta:meta(c,null,{admission_status:'verified_events_only'})}));

@@ -1,0 +1,123 @@
+name: Reviewed school pilot delivery
+# Explicit one-host pilot update requested by the repository owner. Other pushes do not deploy.
+on:
+  push:
+    branches: [fix/phase1-stabilization]
+    paths: ['.github/workflows/pilot-delivery.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: hk-school-test-site
+  cancel-in-progress: false
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: corepack enable && corepack prepare pnpm@10.28.0 --activate
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck && pnpm lint && pnpm test
+      - uses: actions/download-artifact@v4
+        with:
+          name: school-test-site-package
+          run-id: 35419861458
+          github-token: ${{ github.token }}
+          path: reused/package
+      - uses: actions/download-artifact@v4
+        with:
+          name: school-test-deployment-result
+          run-id: 35419861458
+          github-token: ${{ github.token }}
+          path: reused/result
+      - run: node scripts/reuse-test-site-package.mjs stage --from reused/package --previous reused/result/deployment-result.json --run-id 35419861458
+      - name: Build current frontend, retain verified source bytes, capture current admissions evidence
+        env:
+          SCHOOL_BUILD_ENV: staging
+        run: |
+          pnpm build:web
+          node scripts/reuse-test-site-package.mjs overlay --from reused/package
+          command -v pdftotext || (sudo apt-get update && sudo apt-get install -y poppler-utils)
+          python scripts/pilot-capture-sources.py
+          pnpm exec tsx scripts/pilot-build.ts
+          python scripts/pilot-sql-check.py
+          pnpm exec tsx tests/integration/prepare.ts && python tests/integration/publication.py
+      - name: Real local D1 and full parent journey, desktop and mobile
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm db:migrate:local
+          node -e "const f=require('node:fs');const m=JSON.parse(f.readFileSync('artifacts/test-site/manifest.json'));f.writeFileSync('artifacts/test-site/combined.sql',m.chunks.map(c=>f.readFileSync('artifacts/test-site/'+c.file,'utf8')).join('\n'))"
+          pnpm exec wrangler d1 execute DB --config wrangler.jsonc --env local --local --persist-to .wrangler/state --file artifacts/test-site/combined.sql > artifacts/pilot/local-baseline.log
+          pnpm exec wrangler d1 execute DB --config wrangler.jsonc --env local --local --persist-to .wrangler/state --file artifacts/pilot/combined.sql > artifacts/pilot/local-pilot.log
+          pnpm --filter @hk-school/web exec playwright install --with-deps chromium
+          node scripts/local.mjs dev > artifacts/pilot/local-worker.log 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          for i in $(seq 1 40); do
+            if curl -fsS --max-time 2 http://127.0.0.1:8787/api/v1/health >/dev/null; then break; fi
+            sleep 1
+          done
+          pnpm --filter @hk-school/web exec playwright test --config playwright.pilot.config.ts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reviewed-pilot-package
+          path: |
+            apps/web/dist
+            apps/web/test-results-pilot
+            artifacts/pilot
+            artifacts/test-site
+            archive
+          retention-days: 90
+  deploy:
+    needs: prepare
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: corepack enable && corepack prepare pnpm@10.28.0 --activate
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: reviewed-pilot-package
+          path: .
+      - name: Back up and update existing test database and Worker only
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID }}
+          SCHOOL_PILOT_DEPLOY: schools-test.finpulsx.win
+          WRANGLER_SEND_METRICS: 'false'
+        run: node scripts/pilot-deploy.mjs --execute
+      - name: Live browser acceptance without deployment credentials
+        env:
+          SCHOOL_PILOT_BASE_URL: https://schools-test.finpulsx.win
+        run: |
+          pnpm --filter @hk-school/web exec playwright install --with-deps chromium
+          pnpm --filter @hk-school/web exec playwright test --config playwright.pilot.config.ts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reviewed-pilot-live-evidence
+          path: |
+            artifacts/pilot/deployment-result.json
+            artifacts/pilot/before.json
+            artifacts/pilot/before.sql
+            artifacts/pilot/wrangler.pilot.json
+            apps/web/test-results-pilot
+          retention-days: 90
