@@ -17,3 +17,12 @@ dist/
 .idea/
 Thumbs.db
 .DS_Store
+
+# Generated runtime types, Python cache and test output
+apps/worker/worker-configuration.d.ts
+__pycache__/
+*.py[cod]
+coverage/
+playwright-report/
+test-results/
+*.tsbuildinfo

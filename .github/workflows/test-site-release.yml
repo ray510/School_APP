@@ -1,0 +1,141 @@
+name: Real data and finpulsx test deployment
+# Manual only. A push-triggered run would rebuild the data package, mint a new build ID and therefore create a
+# second test database; deployments must name the package they reuse and the database they may resume.
+on:
+  workflow_dispatch:
+    inputs:
+      reuse_package_run_id:
+        description: 'Workflow run ID whose school-test-site-package artifact is reused after hash verification. Empty = download sources and build a fresh package (new build ID, new test database).'
+        required: false
+        default: ''
+        type: string
+      resume_database_id:
+        description: 'Existing test D1 database ID that may be resumed when its ownership table is missing. Must match that run''s deployment-result artifact. Empty = never resume.'
+        required: false
+        default: ''
+        type: string
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: hk-school-test-site
+  cancel-in-progress: false
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      WRANGLER_SEND_METRICS: 'false'
+      REUSE_PACKAGE_RUN_ID: ${{ inputs.reuse_package_run_id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: corepack enable && corepack prepare pnpm@10.28.0 --activate
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck && pnpm lint && pnpm test
+      - name: Download official sources once and retain evidence
+        if: inputs.reuse_package_run_id == ''
+        run: |
+          mkdir -p artifacts
+          pnpm school source probe --all --out artifacts/source-probe.json > artifacts/source-probe.log
+          python scripts/annual-source-inspection.py
+      - name: Build staging website and full eligible source package
+        if: inputs.reuse_package_run_id == ''
+        env:
+          SCHOOL_BUILD_ENV: staging
+        run: |
+          pnpm build:web
+          pnpm exec tsx scripts/test-site-data.ts
+      - name: Download the hash-verified real-data package from the named run
+        if: inputs.reuse_package_run_id != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: school-test-site-package
+          run-id: ${{ inputs.reuse_package_run_id }}
+          github-token: ${{ github.token }}
+          path: reused/package
+      - name: Download that run's deployment result as database evidence
+        if: inputs.reuse_package_run_id != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: school-test-deployment-result
+          run-id: ${{ inputs.reuse_package_run_id }}
+          github-token: ${{ github.token }}
+          path: reused/result
+      - name: Verify package hashes, stage archive and data, record provenance
+        if: inputs.reuse_package_run_id != ''
+        run: node scripts/reuse-test-site-package.mjs stage --from reused/package --previous reused/result/deployment-result.json --run-id "$REUSE_PACKAGE_RUN_ID"
+      - name: Build staging website from this commit and overlay the reused source reference
+        if: inputs.reuse_package_run_id != ''
+        env:
+          SCHOOL_BUILD_ENV: staging
+        run: |
+          pnpm build:web
+          node scripts/reuse-test-site-package.mjs overlay --from reused/package
+      - name: Validate data in actual local D1 and browsers
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm db:migrate:local
+          node -e "const f=require('node:fs');const m=JSON.parse(f.readFileSync('artifacts/test-site/manifest.json'));f.writeFileSync('artifacts/test-site/combined.sql',m.chunks.map(c=>f.readFileSync('artifacts/test-site/'+c.file,'utf8')).join('\n'))"
+          pnpm exec wrangler d1 execute DB --config wrangler.jsonc --env local --local --persist-to .wrangler/state --file artifacts/test-site/combined.sql > artifacts/test-site/local-import.log
+          pnpm --filter @hk-school/web exec playwright install --with-deps chromium
+          node scripts/local.mjs dev > artifacts/test-site/local-worker.log 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          for i in $(seq 1 40); do
+            if curl -fsS --max-time 2 http://127.0.0.1:8787/api/v1/health >/dev/null; then break; fi
+            sleep 1
+          done
+          node scripts/smoke-local.mjs --expect-published
+          pnpm --filter @hk-school/web exec playwright test --config playwright.staging.config.ts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: school-test-site-package
+          path: |
+            apps/web/dist
+            apps/web/test-results-staging
+            artifacts/test-site
+            archive
+          retention-days: 30
+  deploy:
+    needs: prepare
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID }}
+      SCHOOL_TEST_DEPLOY: schools-test.finpulsx.win
+      SCHOOL_TEST_RESUME_DATABASE_ID: ${{ inputs.resume_database_id }}
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: corepack enable && corepack prepare pnpm@10.28.0 --activate
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: school-test-site-package
+          path: .
+      - name: Provision or resume isolated data, deploy only the test hostname and verify HTTPS
+        run: node scripts/deploy-test-site.mjs --execute
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: school-test-deployment-result
+          path: |
+            artifacts/test-site/deployment-result.json
+            artifacts/test-site/d1-import-result.json
+            artifacts/test-site/wrangler.test.json
+            artifacts/test-site/package-provenance.json
+          retention-days: 30

@@ -1,0 +1,21 @@
+import {existsSync,readFileSync,writeFileSync} from 'node:fs';
+import {fileURLToPath} from 'node:url';
+import {resolve} from 'node:path';
+import {spawnSync} from 'node:child_process';
+const root=fileURLToPath(new URL('../',import.meta.url));
+const environment=process.env.SCHOOL_BUILD_ENV??'local';
+if(!['local','staging','production'].includes(environment))throw new Error('SCHOOL_BUILD_ENV must be local, staging or production');
+const indexable=process.env.SCHOOL_ALLOW_INDEXING==='true';
+if(indexable&&environment!=='production')throw new Error('Indexing cannot be enabled outside production');
+if(process.argv.includes('--check')){console.log(`Build environment checked: ${environment}; no deployment`);process.exit(0);}
+const dist=resolve(root,'apps/web/dist');const htmlPath=resolve(dist,'index.html');
+if(!existsSync(htmlPath))throw new Error('Build must produce index.html before metadata');
+const git=spawnSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'});
+const sha=git.status===0?git.stdout.trim():null;
+const build={schema_version:1,environment,git_sha:sha,built_at:new Date().toISOString(),indexing_enabled:indexable,private_storage:'browser-indexeddb',remote_deployment:false};
+writeFileSync(resolve(dist,'build-info.json'),JSON.stringify(build,null,2)+'\n');
+let html=readFileSync(htmlPath,'utf8');if(indexable)html=html.replace('<meta name="robots" content="noindex,nofollow" />','<meta name="robots" content="index,follow" />');writeFileSync(htmlPath,html);
+writeFileSync(resolve(dist,'robots.txt'),`User-agent: *\n${indexable?'Allow: /':'Disallow: /'}\n`);
+const policy="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; form-action 'self'";
+writeFileSync(resolve(dist,'_headers'),`/*\n  X-Content-Type-Options: nosniff\n  X-Frame-Options: DENY\n  Referrer-Policy: no-referrer\n  Permissions-Policy: camera=(), microphone=(), geolocation=()\n  Content-Security-Policy: ${policy}\n${indexable?'':'  X-Robots-Tag: noindex, nofollow\n'}\n/assets/*\n  Cache-Control: public, max-age=31536000, immutable\n\n/build-info.json\n  Cache-Control: no-store\n`);
+console.log(JSON.stringify(build));

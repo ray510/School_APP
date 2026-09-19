@@ -1,132 +1,47 @@
 #!/usr/bin/env node
-
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
-
-const cli = yargs(hideBin(process.argv))
-  .command(
-    'source <command>',
-    'Manage data sources',
-    (yargs) => {
-      return yargs
-        .command(
-          'probe [--all]',
-          'Probe official data sources',
-          {
-            all: { type: 'boolean', default: false, describe: 'Probe all sources' },
-            out: { type: 'string', describe: 'Output file for probe results' }
-          },
-          async (argv) => {
-            console.log('📡 Probing sources...');
-            console.log('Status: BLOCKED - Implementation pending Phase 1');
-            process.exit(1);
-          }
-        )
-        .command(
-          'build',
-          'Build data bundle',
-          {
-            source: { type: 'string', required: true },
-            scope: { type: 'string', default: 'full', describe: 'full|canary' },
-            limit: { type: 'number', describe: 'Item limit for canary' },
-            out: { type: 'string', required: true }
-          },
-          async (argv) => {
-            console.log('📦 Building bundle...');
-            console.log('Status: BLOCKED - Implementation pending Phase 1');
-            process.exit(1);
-          }
-        );
-    }
-  )
-  .command(
-    'review <command>',
-    'Review and approve data',
-    (yargs) => {
-      return yargs
-        .command('prepare', 'Prepare review package', {}, async () => {
-          console.log('📋 Preparing review...');
-          console.log('Status: BLOCKED - Implementation pending Phase 1');
-          process.exit(1);
-        })
-        .command('approve', 'Approve reviewed data', {}, async () => {
-          console.log('✅ Approving...');
-          console.log('Status: BLOCKED - Implementation pending Phase 1');
-          process.exit(1);
-        });
-    }
-  )
-  .command(
-    'fixture <command>',
-    'Manage test fixtures',
-    (yargs) => {
-      return yargs
-        .command(
-          'seed',
-          'Seed local database with test data',
-          {
-            environment: { type: 'string', default: 'local', describe: 'local|staging' }
-          },
-          async (argv) => {
-            if (argv.environment !== 'local') {
-              console.error('❌ Only local environment supported for fixtures');
-              process.exit(1);
-            }
-            console.log('🌱 Seeding local fixture...');
-            console.log('Status: BLOCKED - Implementation pending Phase 1');
-            console.log('Note: Fixture should be clearly labeled as test data');
-            process.exit(1);
-          }
-        );
-    }
-  )
-  .command(
-    'config <command>',
-    'Check configuration',
-    (yargs) => {
-      return yargs
-        .command(
-          'check',
-          'Verify configuration consistency',
-          {
-            environment: { type: 'string', required: true },
-            remote: { type: 'boolean', default: false }
-          },
-          async (argv) => {
-            console.log('🔍 Checking configuration...');
-            console.log(`Environment: ${argv.environment}`);
-            if (argv.remote) {
-              console.log('Mode: Remote validation (not yet supported)');
-            } else {
-              console.log('Mode: Local validation');
-            }
-            console.log('Status: BLOCKED - Implementation pending Phase 1');
-            process.exit(1);
-          }
-        );
-    }
-  )
-  .command(
-    'smoke',
-    'Run smoke tests',
-    {
-      'base-url': { type: 'string', required: true },
-      environment: { type: 'string', required: true },
-      'expect-published': { type: 'boolean', default: false }
-    },
-    async (argv) => {
-      console.log('🔥 Running smoke tests...');
-      console.log(`Base URL: ${argv['base-url']}`);
-      console.log(`Environment: ${argv.environment}`);
-      console.log(`Expect published: ${argv['expect-published']}`);
-      console.log('Status: BLOCKED - Implementation pending Phase 1');
-      process.exit(1);
-    }
-  )
-  .help()
-  .alias('h', 'help')
-  .version('0.1.0')
-  .alias('v', 'version')
-  .strict();
-
-cli.parse();
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { buildSource, probeSources, reviewBundle, importBundle, executeLocal, publicationSql, seedDemo } from './pipeline';
+import {reviewedEventsCommand} from './events';
+import {prepareAnnual,buildAnnual,importAnnual} from './annual';
+function localScript(script:string,args:string[]):void {
+  const result=spawnSync(process.execPath,[fileURLToPath(new URL(`../../../scripts/${script}`,import.meta.url)),...args],{stdio:'inherit'});
+  if(result.error)throw result.error;if(result.status!==0)throw new Error('Local command failed');
+}
+const environment={type:'string' as const,choices:['local','staging','production'],default:'local'};
+const publicationOptions={'release-id':{type:'string' as const,demandOption:true},channel:{type:'string' as const,demandOption:true},'expected-revision':{type:'number' as const,demandOption:true},'expected-previous-release-id':{type:'string' as const},actor:{type:'string' as const,demandOption:true},environment};
+function publish(argv:{environment:string;'release-id':string;channel:string;'expected-revision':number;'expected-previous-release-id'?:string;actor:string},operation:'publish'|'rollback'){
+  if(argv.environment!=='local')throw new Error('BLOCKED: remote publication not authorized or certified');
+  executeLocal(publicationSql({id:argv['release-id'],channel:argv.channel,operation,revision:argv['expected-revision'],previous:argv['expected-previous-release-id']??null,actor:argv.actor}));
+}
+const annualOptions={input:{type:'string' as const,demandOption:true},baseline:{type:'string' as const,demandOption:true},edition:{type:'string' as const,demandOption:true},out:{type:'string' as const,demandOption:true}};
+void yargs(hideBin(process.argv))
+.command('source','Source contracts and baseline bundles',command=>command
+  .command('probe','Explicit read-only source checks',{all:{type:'boolean',default:false},out:{type:'string',default:'artifacts/source-probe.json'}},argv=>probeSources(argv.out,argv.all))
+  .command('build','Build S01 baseline, no implicit publication',{
+    source:{type:'string',demandOption:true},level:{type:'string',choices:['KG','PRIMARY','SECONDARY'],demandOption:true},scope:{type:'string',choices:['full','canary'],default:'canary'},limit:{type:'number'},out:{type:'string',demandOption:true},input:{type:'string'},'reference-period':{type:'string'}
+  },argv=>buildSource({source:argv.source,level:argv.level,scope:argv.scope,limit:argv.limit,out:argv.out,input:argv.input,referencePeriod:argv['reference-period']})).demandCommand(1))
+.command('annual','Annual profiles with reviewed canonical school identity',command=>command
+  .command('prepare','Produce unapproved cross-source identity candidates',annualOptions,argv=>prepareAnnual(argv as Parameters<typeof prepareAnnual>[0]))
+  .command('build','Build at most 15 explicitly reviewed annual rows',{...annualOptions,mapping:{type:'string',demandOption:true}},argv=>buildAnnual(argv as Parameters<typeof buildAnnual>[0]))
+  .command('import','Hash-bound local annual import, no automatic publication',{bundle:{type:'string',demandOption:true},reviewer:{type:'string',demandOption:true},'confirm-hash':{type:'string',demandOption:true},environment},argv=>importAnnual({bundle:argv.bundle,reviewer:argv.reviewer,confirmHash:argv['confirm-hash'],environment:argv.environment})).demandCommand(1))
+.command('review','Hash-bound human review',command=>command
+  .command('prepare','Produce review package',{bundle:{type:'string',demandOption:true}},argv=>reviewBundle(argv.bundle))
+  .command('approve','Confirm exact reviewed hash',{bundle:{type:'string',demandOption:true},reviewer:{type:'string',demandOption:true},'confirm-hash':{type:'string',demandOption:true}},argv=>reviewBundle(argv.bundle,argv.reviewer,argv['confirm-hash'])).demandCommand(1))
+.command('import','Plan or run a local-only import',command=>command
+  .command('plan','Estimate, no database writes',{bundle:{type:'string',demandOption:true},environment},argv=>importBundle(argv.bundle,argv.environment,true))
+  .command('run','Import at most 15 records, no automatic publish',{bundle:{type:'string',demandOption:true},environment},argv=>importBundle(argv.bundle,argv.environment)).demandCommand(1))
+.command('event','Review and import explicit source-evidenced events',command=>command
+  .command('prepare','Validate supplied event JSON and raw evidence',{input:{type:'string',demandOption:true},out:{type:'string',demandOption:true}},argv=>reviewedEventsCommand({input:argv.input,out:argv.out}))
+  .command('import','Require hash and explicit confirmation of every event ID',{input:{type:'string',demandOption:true},reviewer:{type:'string',demandOption:true},'confirm-hash':{type:'string',demandOption:true},'confirm-events':{type:'string',demandOption:true},environment},argv=>reviewedEventsCommand({input:argv.input,reviewer:argv.reviewer,confirmHash:argv['confirm-hash'],confirmEvents:argv['confirm-events'],environment:argv.environment})).demandCommand(1))
+.command('release','Atomic local publication and rollback',command=>command
+  .command('publish','Compare-and-swap to approved release',publicationOptions,argv=>publish(argv as Parameters<typeof publish>[0],'publish'))
+  .command('rollback','Compare-and-swap to previous published release',publicationOptions,argv=>publish(argv as Parameters<typeof publish>[0],'rollback')).demandCommand(1))
+.command('demo','Explicit synthetic UI demo; local only',{environment},argv=>seedDemo(argv.environment))
+.command('fixture','Unpublished baseline fixture',command=>command.command('seed','Seed local unpublished test records',{environment},argv=>{if(argv.environment!=='local')throw new Error('Fixtures are local only');localScript('local.mjs',['fixture']);}).demandCommand(1))
+.command('config','Configuration safety checks',command=>command.command('check','Check local isolation',{environment,remote:{type:'boolean',default:false}},argv=>{if(argv.environment!=='local'||argv.remote)throw new Error('BLOCKED: remote preflight is not certified');localScript('local.mjs',['config']);}).demandCommand(1))
+.command('smoke','Read-only local HTTP smoke',{'base-url':{type:'string',demandOption:true},environment,'expect-published':{type:'boolean',default:false}},argv=>{if(argv.environment!=='local')throw new Error('Local smoke only');localScript('smoke-local.mjs',['--base-url',argv['base-url'],...(argv['expect-published']?['--expect-published']:[])]);})
+.demandCommand(1).strict().help().alias('h','help').version('0.2.0').parseAsync()
+.catch(error=>{console.error(error instanceof Error?error.message:'CLI failed');process.exitCode=1;});

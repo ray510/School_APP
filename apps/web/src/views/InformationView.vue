@@ -1,0 +1,11 @@
+<template>
+  <template v-if="route.name==='sources'"><h1>資料來源與覆蓋</h1><p class="notice">有下載資源不代表已完成跨來源學校對應。來源可讀、資料已審核及正式發佈是不同狀態。</p><p v-if="error" class="notice error" role="alert">{{ error }}</p><div class="grid"><article v-for="source in official" :key="source.id" class="card"><h2>{{ source.name }}</h2><p>{{ source.publisher }}</p><p>平台狀態：{{ stateFor(source.id) }}</p><a :href="source.url" target="_blank" rel="noopener noreferrer">官方資料目錄</a></article></div><p>目前基線接入以教育局名錄為主。幼稚園、小學及中學年度概覽、學費證明書及各校招生日期，不會假設已全部整合。</p></template>
+  <template v-else><h1>關於香港選校年鑑</h1><section class="panel"><h2>非官方資訊工具</h2><p>本平台協助整理資料，並非教育局、家校會或學校的正式報名系統。不提供學校排名、錄取機率或保證學位。</p><h2>私隱</h2><p>私人清單、筆記及私人事件只存於 IndexedDB，不送往 API，不加入網址或分析日誌。瀏覽器資料可能被清除，請備份。無需提供兒童姓名、成績或證明文件。</p><h2>版本及來源</h2><p>入學學年、概覽版本、資料描述時期及擷取時間分開保存。未知收費不等於免費；只提供日期的事件不擅自補上截止時間。</p><h2>使用與更正</h2><p>請透過每項資料的來源連結核對最新安排。平台資料更正聯絡渠道尚未開放；正式上線前須由營運者設定。</p><h2>部署狀態</h2><p>目前為開發預覽，不代表已完成 Cloudflare 正式環境、全港資料覆蓋或安全驗收。</p></section></template>
+</template>
+<script setup lang="ts">
+import { ref,onMounted } from 'vue';import { useRoute } from 'vue-router';import { z } from 'zod';import { getData } from '../lib/api';
+const route=useRoute();const error=ref('');const states=ref<Record<string,string>>({});
+const official=[{id:'edb-school-directory',name:'學校位置及資料',publisher:'教育局',url:'https://data.gov.hk/tc-data/dataset/hk-edb-schinfo-school-location-and-information'},{id:'edb-kg-profiles',name:'幼稚園及幼稚園暨幼兒中心概覽',publisher:'教育局',url:'https://data.gov.hk/tc-data/dataset/hk-edb-kgjoinkes-kg-profile'},{id:'chsc-primary-profiles',name:'小學概覽',publisher:'家庭與學校合作事宜委員會',url:'https://data.gov.hk/en-data/dataset/chsc-chsc-primary-school-profiles'},{id:'chsc-secondary-profiles',name:'中學概覽',publisher:'家庭與學校合作事宜委員會',url:'https://data.gov.hk/en-data/dataset/chsc-chsc-secondary-school-profiles'}];
+function stateFor(id:string){return states.value[id]??'尚未接入已發佈資料庫';}
+onMounted(async()=>{if(route.name!=='sources')return;try{const result=await getData('/api/v1/sources',z.array(z.object({source_id:z.string(),contract_status:z.string()}).passthrough()));states.value=Object.fromEntries(result.data.map(source=>[source.source_id,source.contract_status]));}catch(e){error.value=String(e);}});
+</script>

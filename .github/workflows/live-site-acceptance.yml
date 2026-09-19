@@ -1,0 +1,48 @@
+name: Live test-site browser acceptance (read only)
+# GET-only checks against the deployed test hostname from a runner with working DNS. No secrets, no Cloudflare writes.
+# The push trigger on this file registers the workflow with GitHub (nothing here is on the default branch yet);
+# afterwards it can be started with workflow_dispatch.
+on:
+  push:
+    branches: [fix/phase1-stabilization]
+    paths: [.github/workflows/live-site-acceptance.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  browsers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SCHOOL_LIVE_BASE_URL: https://schools-test.finpulsx.win/
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: corepack enable && corepack prepare pnpm@10.28.0 --activate
+      - run: pnpm install --frozen-lockfile
+      - name: HTTP acceptance (health, indexing guard, API 404 boundary, data manifest)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/live
+          curl -fsS --max-time 20 "${SCHOOL_LIVE_BASE_URL}api/v1/health" | tee artifacts/live/health.json
+          node -e "const h=require('./artifacts/live/health.json').data;if(h.environment!=='staging'||h.database!=='ok'||h.data_status!=='published')throw new Error('health not staging/ok/published')"
+          curl -fsSI --max-time 20 "${SCHOOL_LIVE_BASE_URL}" | tee artifacts/live/root-headers.txt | grep -i '^x-robots-tag: noindex' >/dev/null
+          curl -fsS --max-time 20 "${SCHOOL_LIVE_BASE_URL}robots.txt" | tee artifacts/live/robots.txt | grep -x 'Disallow: /' >/dev/null
+          code=$(curl -s -o artifacts/live/api-404.json -w '%{http_code} %{content_type}' --max-time 20 "${SCHOOL_LIVE_BASE_URL}api/not-found"); echo "$code"; [[ "$code" == 404\ application/json* ]]
+          curl -fsS --max-time 20 "${SCHOOL_LIVE_BASE_URL}test-data-report.json" | tee artifacts/live/test-data-report.json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const m=JSON.parse(s);if(m.synthetic_records!==0||m.admission_events!==0)throw new Error('synthetic or invented data present');console.log('build_id',m.build_id,'records',m.baseline.included_records)})"
+      - run: pnpm --filter @hk-school/web exec playwright install --with-deps chromium
+      - name: Desktop and mobile Chromium flows against the live site
+        run: pnpm --filter @hk-school/web exec playwright test --config playwright.live.config.ts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: school-live-acceptance
+          path: |
+            artifacts/live
+            apps/web/test-results-live
+          retention-days: 30

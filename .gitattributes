@@ -1,0 +1,5 @@
+# D1 remote migrations break on CRLF inside trigger bodies (cloudflare/workers-sdk #14991, #15314).
+# Keep SQL and shell-facing text at LF regardless of core.autocrlf.
+migrations/*.sql text eol=lf
+*.sql text eol=lf
+*.sh text eol=lf

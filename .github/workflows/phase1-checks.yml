@@ -1,0 +1,72 @@
+name: Repository local acceptance
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: repository-checks-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: node scripts/run-regressions.mjs
+  local-acceptance:
+    needs: regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: corepack enable && corepack prepare pnpm@10.28.0 --activate
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test:unit
+      - run: pnpm exec tsx tests/integration/prepare.ts && python tests/integration/publication.py
+      - run: pnpm build:web
+      - run: pnpm build:worker
+      - run: pnpm db:migrate:local
+      - run: pnpm fixture:local
+      - run: pnpm --filter @hk-school/web exec playwright install --with-deps chromium
+      - name: Actual workerd, D1 and browser acceptance (local only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/local.mjs dev > "$RUNNER_TEMP/worker.log" 2>&1 &
+          worker_pid=$!
+          trap 'kill "$worker_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 40); do
+            if curl --silent --fail --max-time 2 http://127.0.0.1:8787/api/v1/health > /dev/null; then break; fi
+            sleep 1
+          done
+          pnpm smoke:local
+          pnpm school demo --environment local
+          pnpm school demo --environment local
+          node tests/integration/catalog-http.mjs
+          pnpm test:e2e
+          if pnpm school demo --environment production; then echo 'Production demo guard failed'; exit 1; fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: repository-local-evidence
+          path: |
+            ${{ runner.temp }}/worker.log
+            apps/web/test-results
+            apps/web/playwright-report
+            artifacts/publication-fixtures.json
+          retention-days: 7

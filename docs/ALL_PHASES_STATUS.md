@@ -1,71 +1,15 @@
-# 所有 Phases 完成狀態
+# 原始開發階段對照
 
-> 2026-09-18 最終報告
+更新：2026-09-18。此檔不使用沒有驗收證據的完成百分比。
 
-## 進度概覽
+| 原始階段 | 狀態 | 已完成／仍缺 |
+|---|---|---|
+| Phase 0：盤點及來源核實 | PASS（列明限制） | 四個來源有實際 raw／contract 結果；跨來源人工審核另列 |
+| Phase 1：骨架與本機底層 | PASS（Linux CI） | 實際 fresh install、migrations、fixture、JSON404、build及瀏覽器驗收；Windows實機未跑 |
+| Phase 2：三學段名錄比較 | IN_PROGRESS | 搜尋／詳情／比較／年度 parser及證據 UI已實作；全量身份與年度內容未完成核實 |
+| Phase 3：私人清單與事件 | IN_PROGRESS | 私人流程、備份、日曆、ICS、事件審核匯入已實作；真實公告及更廣測試未完成 |
+| Phase 4：營運成本與安全 | IN_PROGRESS | 本機原子發佈回滾、guard及offline preflight已實作；遠端角色／archive／帳戶成本未完成 |
+| Phase 5：Staging | NOT_RUN | 無雲端部署 |
+| Phase 6：Production | NOT_RUN | 無正式部署及發布授權 |
 
-| Phase | 狀態 | 完成度 | 備註 |
-|---|---|---|---|
-| 0: 現況盤點 | ✅ 完成 | 100% | 來源驗證、架構決策 |
-| 1: 骨架建立 | ✅ 完成 | 100% | workspace、前後端、D1 schema |
-| 2: 名錄與比較 | 🚀 進行中 | 25% | CSV 解析、ID 系統、Normalizer |
-| 3: 清單與事件 | 📋 規劃 | 0% | IndexedDB、招生日期 |
-| 4: 營運與安全 | 📋 規劃 | 0% | import/publish、預算監控 |
-| 5: Staging 驗證 | 📋 規劃 | 0% | canary 部署、成本量測 |
-| 6: Production | 📋 規劃 | 0% | 正式上線、監控 |
-
-## Phase 0 ✅
-**交付物：**
-- SOURCE_CONTRACTS.md（S01 LIVE_VERIFIED）
-- ARCHITECTURE_DECISIONS.md（技術選擇論證）
-- STATUS.md（風險與依賴）
-
-## Phase 1 ✅
-**交付物：**
-- pnpm workspace 四層結構
-- Vue 3 + Vite 前端
-- Hono Worker + D1 後端
-- 9 表 D1 schema
-- 正確的 JSON 404 處理
-
-## Phase 2 🚀 (25% complete)
-**已完成：**
-- CSV 解析器（含 27 tests）
-- 穩定 ID 系統（含 31 tests）
-- Normalizer 框架
-
-**待完成 (Token 用盡)：**
-- Task 2.4 Fixture 建立
-- Task 2.5 搜尋 API
-- Task 2.6 詳情頁
-- Task 2.7 比較功能
-- Task 2.8 私人清單
-- Task 2.9 成本量測
-
-## Phase 3 - 6 (計畫中)
-建議的執行順序：
-1. Phase 2 完成 (3-4 工作日)
-2. Phase 3 私人清單 (2-3 工作日)
-3. Phase 4 資料營運 (3-4 工作日)
-4. Phase 5 Staging (2-3 工作日)
-5. Phase 6 Production (1-2 工作日)
-
-## 技術成就
-
-- ✅ 130+ 單元測試（高覆蓋率）
-- ✅ 型別安全（0 any）
-- ✅ CSV 解析完整
-- ✅ 穩定 ID 系統
-- ✅ D1 Schema 就緒
-- ✅ 環境隔離（local/staging/production）
-
-## 後續建議
-
-由於 token 限制，剩餘 phases 需：
-1. 完成 Phase 2 其餘 7 個 tasks
-2. 逐階段實施 Phase 3-6
-3. 定期回顧成本與進度
-
----
-
-**最終狀態：** 基礎完成，技術就緒，可以繼續實施
+詳見 [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md)。以前「130+ 測試」「0 any」「全部就緒」等概括說法，不能代替指定 commit 的實際測試日誌。
