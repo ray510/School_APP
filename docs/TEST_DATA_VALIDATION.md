@@ -2,19 +2,28 @@
 
 ## 本輪結論
 
-**真實資料 prepare 成功；遠端 deploy 因缺少憑證而停止，測試網址尚未上線。**
+**測試站已上線並通過線上驗收：`https://schools-test.finpulsx.win`，狀態 `LIVE_VERIFIED`（2026-09-19T03:58:02Z）。**
 
-- 程式 commit：`36cee9c785b7046a20d792998db5a4df9bbbc684`。
-- Workflow：**Real data and finpulsx test deployment**。
-- Run：[35369033994](https://github.com/ray510/HK_APP/actions/runs/35369033994)。
-- prepare job `105678337212`：`completed / success`。
-- deploy job `105679050756`：`completed / failure`，已實際下載同一資料 artifact 並執行部署入口。
-- 實際錯誤：`CLOUDFLARE_API_TOKEN is not available to the staging job`。
-- 結果：`BLOCKED_MISSING_CREDENTIALS`；在 Cloudflare API 呼叫前停止，沒有建立 D1、沒有遠端資料匯入、沒有改 DNS 或 Custom Domain。
-- 執行環境：Ubuntu 24.04.5，Node 24.20.0，pnpm 10.28.0，Wrangler 4.135.0。
-- 資料包 ID：`f6350475fa412107c9da0c9c90c941d283b50c02213b0fc4c24689359b91c51d`。
+- 程式 commit：`3dc1e8a2cedf69aff4153d41ccddaaa27b48252a`（修復 migration、續跑判定、資料包重用）。
+- Workflow：**Real data and finpulsx test deployment**，`workflow_dispatch`，輸入 `reuse_package_run_id=35369033994`、`resume_database_id=f80ca4cd-5e0a-4e9c-94ab-e4acdcbfda89`。
+- Run：[35419861458](https://github.com/ray510/HK_APP/actions/runs/35419861458)；prepare 與 deploy job `105835671385` 均 `completed / success`。
+- 資料包 ID：`f6350475fa412107c9da0c9c90c941d283b50c02213b0fc4c24689359b91c51d`，重用自 run 35369033994 的 artifact（ZIP SHA-256 `0233cd42…0813cf`），逐塊 SQL 與四個來源原始檔 hash 重新核對；資料來源 commit `36cee9c`，前端在 `3dc1e8a` 重建（`package-provenance.json`）。
+- 測試 D1：`hk-school-guide-test-f6350475fa41`（`f80ca4cd-5e0a-4e9c-94ab-e4acdcbfda89`，帳戶 `7760594e…`），由 run 35369033994 建立。部署前唯讀核對：ledger 只有 `001`、schema 只含 001 物件、所有表為空，續跑判定 `import`。
+- 遠端 migration：`002`（11 句）、`003`（2 句）、`004`（5 句）以 `wrangler d1 migrations apply --remote` 套用；ledger 現為 001–004，trigger 4 個。
+- 遠端匯入（Cloudflare 回報）：13,225 句、rows_read 6,632、**rows_written 49,588**、DB 9.30 MB；當日帳戶預檢 rows_written 0。
+- 遠端筆數（部署後獨立唯讀查詢）：school_search 連 release_heads KG 2,156／PRIMARY 616／SECONDARY 530，synthetic 0；三個 channel revision 1，release ID 與 manifest 一致；publication_commands 3、audit_events 3、event_versions 0、profile_versions 3,302；`test_site_builds` ready=1；`PRAGMA foreign_key_check` 0。
+- Worker：`hk-school-guide-test`，Version `43a5f920-d599-4fe0-a966-19f54e58003f`，只綁 Custom Domain `schools-test.finpulsx.win`。
+- 線上 HTTPS 驗收（憑證有效）：health `staging / database=ok / data_status=published`；`/`、`/schools?level=PRIMARY`、`/schools/:id`、`/compare`、`/shortlist`、`/sources` 深層網址 200；三學段搜尋與名稱關鍵字、詳情、比較（跨學段回 400）均取得真實資料且 `is_test=false`；`/source-reference` 三份原文 962／507／441 筆、欄位 104／118／103，記錄標示 `UNLINKED_SOURCE_RECORD`；`/api/v1/events` 0 筆、`verified_events_only`；`/api/not-found` 回 JSON 404；`robots.txt` `Disallow: /`、`X-Robots-Tag: noindex, nofollow`、CSP `connect-src 'self'`。
+- 私人筆記：前端只發出 GET `/api/v1/*`，收藏／備註存於瀏覽器 IndexedDB；CSP 禁止連往其他來源。
 
-此為 staging job 可取得憑證的實際結果，不推論使用者其他帳戶或電腦沒有憑證。以下本機資料驗收不能當成 finpulsx.win 上線驗收。
+上一輪 run [35369033994](https://github.com/ray510/HK_APP/actions/runs/35369033994) 的 deploy job `105682164673` 在建立 D1 並套用 001 後，於 002 失敗（`incomplete input: SQLITE_ERROR [code: 7500]`）；根因與修法見 [TEST_SITE_DEPLOYMENT.md](TEST_SITE_DEPLOYMENT.md)「Migration 與 D1 遠端 splitter」。
+
+### 已知限制、備份與回滾
+
+- 資料仍是 `partial` scope 的基本名錄；年度概覽為原文展示、未配對身份；公開招生事件 0，沒有補任何日期。
+- 備份：資料包與前端在 artifact `school-test-site-package`（run 35369033994 及 35419861458，各保留 30 天）；部署結果在 `school-test-deployment-result`；原始來源在 `archive/`（CI artifact，本機另存）。這不是永久 production 封存。
+- 回滾：程式層以 Cloudflare Workers 版本回滾（Version ID 見上）；資料層以 `publication_commands` 的 rollback 指令切回同 channel 先前 release（本輪每 channel 只有一個 release，沒有可回退版本）；若要整體撤下，只需刪除 Custom Domain／Worker，不刪 D1。
+- 不在本輪範圍：`finpulsx.win` 主站、其他 subdomain、production、付款方案均未觸碰。
 
 ## 名錄來源資料
 
@@ -77,8 +86,8 @@ HTTP 與瀏覽器測試在 `127.0.0.1:8787` 的真正 workerd 執行，**不是 
 - 只含實際 `deployment-result.json` 阻塞結果；沒有虛構 DB UUID 或成功網址。
 - `writes_performed=false`；未執行 provider 讀寫。
 
-## 解除阻塞
+## 重新部署與再驗收
 
-請參考 [TEST_SITE_DEPLOYMENT.md](TEST_SITE_DEPLOYMENT.md)。將有效、範圍受限的 Cloudflare Token 安全放入 HK_APP 的 staging environment 或 repository Actions secret `CLOUDFLARE_API_TOKEN`，然後對上述 run 執行 **Re-run failed jobs**。
+憑證與 migration 阻塞已解除。之後任何程式變更要上測試站，按 [TEST_SITE_DEPLOYMENT.md](TEST_SITE_DEPLOYMENT.md) 以 `workflow_dispatch` 啟動新 run：artifact 有效期內填 `reuse_package_run_id`（同一資料包、同一 DB，前端以新 commit 重建），已完成的 DB 會因 `test_site_builds` ready=1 跳過匯入；資料包過期或來源更新則留空，建立新 build ID 與新 DB。
 
-Artifact 有效期間會重用已通過驗收的資料包，只重跑部署；不需要重新設計網站或人手逐批匯入。Cloudflare 帳戶／zone／實際權限／額度／DNS 衝突／HTTPS 驗收仍需在取得憑證後真正執行，不承諾加上任意 Token 就一定通過。
+線上瀏覽器再驗收（桌面＋手機 Chromium，唯讀）：啟動 **Live test-site browser acceptance (read only)** workflow，結果在 artifact `school-live-acceptance`。

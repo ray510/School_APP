@@ -52,6 +52,11 @@ export function checkPackage(m){
      !Array.isArray(m.chunks)||!m.chunks.length||m.chunks.length>150||m.chunks.some(c=>!/^part-\d{4}\.sql$/.test(c.file)||!/^[a-f0-9]{64}$/.test(c.sha256)))throw new Error('Staging package validation failed');
   if(m.releases?.length!==3||new Set(m.releases.map(r=>r.level)).size!==3||m.releases.some(r=>!['KG','PRIMARY','SECONDARY'].includes(r.level)||r.channel!=='profiles:'+r.level||!/^rel_[a-f0-9]{32}$/.test(r.release_id)||!Number.isInteger(r.items)||r.items<1))throw new Error('Invalid staging release set');
 }
+/** Provider-reported rows written from `wrangler d1 execute --json`; the JSON follows upload progress lines. Unknown stays null, never a fabricated zero. */
+export function importRowsWritten(output){
+  const start=String(output).indexOf('[');if(start===-1)return null;
+  try{const data=JSON.parse(String(output).slice(start));if(!Array.isArray(data)||!data.length||!data.every(x=>x?.success===true&&Number.isSafeInteger(x.meta?.rows_written)))return null;return data.reduce((n,x)=>n+x.meta.rows_written,0);}catch{return null;}
+}
 export function budgetCheck(observation,estimated){
   if(!Number.isSafeInteger(observation.rows_written)||!Number.isSafeInteger(observation.rows_read)||observation.rows_written<0||observation.rows_read<0)throw new Error('Missing account-wide row metrics');
   if(observation.rows_written+estimated+10000>100000||observation.rows_read>4500000)throw new Error('Insufficient conservative Free-tier account budget; no write attempted');
@@ -141,7 +146,7 @@ async function main(){
       budgetCheck(await quota(account),m.estimated_write_budget);
       report.writes_performed=true;run(['d1','migrations','apply','DB','--config',configPath,'--remote']);
       const output=run(['d1','execute','DB','--config',configPath,'--remote','--file',sqlFile,'--yes','--json'],true);writeFileSync(resolve(OUT,'d1-import-result.json'),output);
-      try{const data=JSON.parse(output);if(Array.isArray(data)&&data.every(x=>Number.isFinite(x.meta?.rows_written)))report.remote_d1_rows_written=data.reduce((n,x)=>n+x.meta.rows_written,0);}catch{/* Keep unknown, never report a fabricated zero. */}
+      report.remote_d1_rows_written=importRowsWritten(output);
     }
     const actual=await dbQuery("SELECT s.level,COUNT(*) AS n,SUM(s.is_test) AS synthetic FROM school_search s JOIN release_heads h ON h.release_id=s.release_id GROUP BY s.level");
     if(m.releases.some(expected=>!actual.some(a=>a.level===expected.level&&a.n===expected.items&&a.synthetic===0)))throw new Error('Remote data coverage check failed');
