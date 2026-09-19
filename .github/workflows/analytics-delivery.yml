@@ -1,4 +1,5 @@
 name: Classification and evidence analytics
+# Read-only source snapshot for the missing annual-profile regression reported by the user.
 on:
   push:
     branches: [release/full-catalog]
