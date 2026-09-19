@@ -11,13 +11,19 @@ test('Jev comparison reuses real inference with original evidence for two to fou
  if(process.env.SCHOOL_PRODUCTION_EXPECTED_SHA){const build=await(await request.get('/build-info.json')).json();expect(build.git_sha).toBe(process.env.SCHOOL_PRODUCTION_EXPECTED_SHA);}
  expect(analytics.provider).toBe('typesafe');expect(analytics.model_returned).toContain('jev-1.13.0');
  const external:string[]=[],writes:string[]=[];const origin=new URL(baseURL!).origin;
- page.on('request',r=>{if(r.method()!=='GET')writes.push(r.url());if(!r.url().startsWith(origin)&&/^https?:/.test(r.url()))external.push(r.url());});
+ page.on('request',r=>{if(r.method()!=='GET')writes.push(r.url());if(/^https?:/.test(r.url())&&new URL(r.url()).origin!==origin)external.push(r.url());});
  for(const level of ['KG','PRIMARY','SECONDARY']){
   const candidates=analytics.entries.filter(e=>e.level===level&&e.analysis_status==='ANALYZED'&&Object.values(e.labels).some(label=>label.evidence));
   const ids=[...new Set(candidates.map(e=>e.school_id))].slice(0,4);expect(ids).toHaveLength(4);
   const records:School[]=await Promise.all(ids.map(async id=>(await request.get('/data/'+m.data_id+'/schools/'+id+'.json')).json()));
   for(const count of [2,4]){
-   await page.goto('/compare?ids='+ids.slice(0,count).join(',')+'&year=2027');
+   const navigation=await page.goto('/compare?ids='+ids.slice(0,count).join(',')+'&year=2027');
+   expect(navigation).not.toBeNull();
+   expect(navigation!.headers()['cache-control']).toContain('no-transform');
+   expect(navigation!.headers()['content-security-policy']).toContain("script-src 'self'");
+   expect(navigation!.headers()['content-security-policy']).toContain("connect-src 'self'");
+   expect(navigation!.headers()['content-security-policy']).not.toContain('unsafe-inline');
+   expect(await navigation!.text()).not.toContain('static.cloudflareinsights.com');
    await expect(page.getByRole('heading',{name:'JEV 證據比較',exact:true})).toBeVisible();
    const table=page.getByTestId('jev-comparison-table');await expect(table.locator('tbody tr')).toHaveCount(6);await expect(table.locator('thead th')).toHaveCount(count+1);
    await expect(page.getByTestId('official-comparison')).toBeVisible();await expect(page.getByTestId('comparison-coverage')).toContainText(String(count)+' 項取得');

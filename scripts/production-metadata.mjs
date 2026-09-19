@@ -5,6 +5,8 @@ if(m.environment!=='production'||m.coverage_status!=='COMPLETE_SELECTED_OFFICIAL
 const git=execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim();
 writeFileSync(resolve(dist,'build-info.json'),JSON.stringify({owner:'ray510/HK_APP',environment:'production',git_sha:git,data_id:m.data_id,built_at:new Date().toISOString(),storage:'versioned-static-assets',private_storage:'browser-indexeddb'},null,2));
 writeFileSync(resolve(dist,'robots.txt'),'User-agent: *\nAllow: /\nDisallow: /api/\n');
+// Prevent edge HTML injection on comparison only; leave CSP and hashed asset caching strict.
+// https://developers.cloudflare.com/web-analytics/get-started/
 writeFileSync(resolve(dist,'_headers'),`/*
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
@@ -23,4 +25,5 @@ writeFileSync(resolve(dist,'_headers'),`/*
   X-Robots-Tag: noindex
 /compare
   X-Robots-Tag: noindex
+  Cache-Control: public, max-age=0, must-revalidate, no-transform
 `);

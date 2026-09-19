@@ -1,5 +1,5 @@
 name: JEV school comparison release
-# UI-only delivery. Reuse verified actual Jev inference, no new inference keys or calls.
+# UI-only delivery with comparison no-transform privacy protection. No new inference keys or calls.
 on:
   push:
     branches: [release/full-catalog]
