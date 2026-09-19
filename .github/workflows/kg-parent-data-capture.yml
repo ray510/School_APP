@@ -1,0 +1,33 @@
+name: Full KG parent document capture
+on:
+  push:
+    branches: [release/full-catalog]
+    paths: [.github/workflows/kg-parent-data-capture.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/download-artifact@v4
+        with:
+          artifact-ids: '10587380247'
+          run-id: '35450856763'
+          github-token: ${{ github.token }}
+          path: base
+          merge-multiple: true
+      - name: Install text-only PDF extraction
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils
+      - name: Bounded public source retrieval with TLS validation
+        run: python scripts/kg-parent-capture.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kg-parent-documents
+          path: captured-parent
+          retention-days: 90
