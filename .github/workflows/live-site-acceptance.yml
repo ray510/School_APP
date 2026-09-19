@@ -1,6 +1,11 @@
 name: Live test-site browser acceptance (read only)
 # GET-only checks against the deployed test hostname from a runner with working DNS. No secrets, no Cloudflare writes.
+# The push trigger on this file registers the workflow with GitHub (nothing here is on the default branch yet);
+# afterwards it can be started with workflow_dispatch.
 on:
+  push:
+    branches: [fix/phase1-stabilization]
+    paths: [.github/workflows/live-site-acceptance.yml]
   workflow_dispatch:
 permissions:
   contents: read
