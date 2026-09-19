@@ -1,14 +1,50 @@
 /** Explicit staging-only deployment. No arbitrary host, database, SQL path or production switch. */
-import {readFileSync,writeFileSync,mkdirSync,existsSync,appendFileSync} from 'node:fs';
+import {readFileSync,writeFileSync,mkdirSync,existsSync,appendFileSync,readdirSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
 export const HOST='schools-test.finpulsx.win';
 export const WORKER='hk-school-guide-test';
+export const OWNER='ray510/HK_APP';
 const ROOT=fileURLToPath(new URL('../',import.meta.url));
 const OUT=resolve(ROOT,'artifacts/test-site');
 const digest=b=>createHash('sha256').update(b).digest('hex');
+/** Table names a migration creates; identifiers are restricted so they can be interpolated into COUNT(*) probes. */
+export function migrationTables(sql){
+  return [...String(sql).matchAll(/CREATE TABLE(?: IF NOT EXISTS)? ([A-Za-z_][A-Za-z0-9_]*)/g)].map(match=>match[1]);
+}
+export function loadMigrations(directory=resolve(ROOT,'migrations')){
+  return readdirSync(directory).filter(name=>name.endsWith('.sql')).sort().map(name=>({name,tables:migrationTables(readFileSync(resolve(directory,name),'utf8'))}));
+}
+/**
+ * Decide whether an existing database with the expected name may be continued. Pure: callers gather the evidence.
+ * A missing ownership table is never permission by itself; every piece of evidence must agree or the run stops without writing.
+ */
+export function assessExistingDatabase(evidence){
+  const stop=reason=>({action:'stop',reason});
+  const {expectedName,database,tables,ledger,migrations,counts,ownership,previous,resumeDatabaseId,manifest}=evidence;
+  if(!database||database.name!==expectedName||!/^[a-f0-9-]{36}$/.test(database.uuid??''))return stop('Existing database identity does not match the package build ID');
+  if(!Array.isArray(tables)||!Array.isArray(ledger)||!Array.isArray(migrations))return stop('Existing database schema or migration ledger could not be read');
+  if(tables.includes('test_site_builds')){
+    if(!Array.isArray(ownership)||ownership.length!==1||ownership[0].owner!==OWNER||ownership[0].hostname!==HOST||ownership[0].build_id!==manifest.build_id)return stop('Existing database ownership mismatch');
+    return {action:ownership[0].ready===1?'skip_import':'import',reason:'Ownership record verified for this package',remaining:migrations.map(m=>m.name).filter(name=>!ledger.includes(name))};
+  }
+  if(!resumeDatabaseId)return stop('Existing database has no ownership record and no resume database ID was supplied');
+  if(resumeDatabaseId!==database.uuid)return stop('Resume database ID does not match the existing database');
+  if(!previous||previous.database_id!==database.uuid||previous.database_name!==database.name||previous.build_id!==manifest.build_id||previous.hostname!==HOST||previous.writes_performed!==true)return stop('Previous deployment result does not describe this database and package');
+  const names=migrations.map(m=>m.name);
+  if(ledger.length>names.length||ledger.some((name,index)=>name!==names[index]))return stop('Migration ledger is not a prefix of the repository migrations');
+  const applied=migrations.slice(0,ledger.length);
+  const allowed=new Set(['d1_migrations','_cf_KV','sqlite_sequence',...applied.flatMap(m=>m.tables)]);
+  const unknown=tables.filter(table=>!allowed.has(table));
+  if(unknown.length)return stop('Existing database contains tables outside the applied migrations: '+unknown.join(','));
+  const missing=applied.flatMap(m=>m.tables).filter(table=>!tables.includes(table));
+  if(missing.length)return stop('Migration ledger claims tables that do not exist: '+missing.join(','));
+  const populated=applied.flatMap(m=>m.tables).filter(table=>counts?.[table]!==0);
+  if(populated.length)return stop('Existing database already holds rows without an ownership record: '+populated.join(','));
+  return {action:'import',reason:'Resuming an interrupted migration on an empty, ledger-consistent database',remaining:names.slice(ledger.length)};
+}
 export function checkPackage(m){
   if(m?.schema_version!==1||m.hostname!==HOST||m.environment!=='staging'||!/^[a-f0-9]{64}$/.test(m.build_id)||
      m.synthetic_records!==0||m.admission_events!==0||m.identity_approval!=='ANNUAL_RECORDS_UNLINKED'||
@@ -38,6 +74,11 @@ async function main(){
   const m=JSON.parse(readFileSync(resolve(OUT,'manifest.json'),'utf8'));checkPackage(m);
   const build=JSON.parse(readFileSync(resolve(ROOT,'apps/web/dist/build-info.json'),'utf8'));
   if(build.environment!=='staging'||build.indexing_enabled!==false||!/^[a-f0-9]{40}$/.test(build.git_sha))throw new Error('Staging build metadata is not valid');
+  const reference=JSON.parse(readFileSync(resolve(ROOT,'apps/web/dist/source-reference/manifest.json'),'utf8'));
+  if(reference.build_id!==m.build_id||reference.sources?.length!==3)throw new Error('Frontend source reference does not belong to this data package');
+  report.build_id=m.build_id;report.frontend_git_sha=build.git_sha;
+  const provenancePath=resolve(OUT,'package-provenance.json');
+  if(existsSync(provenancePath)){const provenance=JSON.parse(readFileSync(provenancePath,'utf8'));if(provenance.package_build_id!==m.build_id||provenance.frontend_git_sha!==build.git_sha)throw new Error('Package provenance does not match the package and frontend being deployed');report.package_provenance=provenance;}
   const sql=m.chunks.map(c=>{const bytes=readFileSync(resolve(OUT,c.file));if(digest(bytes)!==c.sha256)throw new Error('SQL package hash mismatch');return bytes.toString('utf8');}).join('\n');
   if(Buffer.byteLength(sql)>15000000)throw new Error('SQL package exceeds budget');
   const sqlFile=resolve(OUT,'combined.sql');writeFileSync(sqlFile,sql);
@@ -75,8 +116,22 @@ async function main(){
     if(databases.some(d=>typeof d.file_size!=='number'))throw new Error('Account storage coverage unavailable');
     if(databases.reduce((n,d)=>n+d.file_size,0)+50000000>5000000000)throw new Error('Insufficient account storage budget');
     if(target.length){report.previous_worker_settings=await result('/accounts/'+account+'/workers/scripts/'+WORKER+'/settings');}
-    db=matches[0];let alreadyReady=false;
-    if(db){const owners=await dbQuery('SELECT owner,hostname,ready,build_id FROM test_site_builds');if(owners.length!==1||owners[0].owner!=='ray510/HK_APP'||owners[0].hostname!==HOST||owners[0].build_id!==m.build_id)throw new Error('Existing database ownership mismatch');alreadyReady=owners[0].ready===1;}
+    db=matches[0];let assessment={action:'import',reason:'No database with the package name exists yet',remaining:loadMigrations().map(x=>x.name)};
+    if(db){
+      // Read-only evidence first. The ownership table only exists once the data package has run, so it cannot be queried blindly.
+      const tables=(await dbQuery("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")).map(row=>row.name);
+      const ledger=tables.includes('d1_migrations')?(await dbQuery('SELECT name FROM d1_migrations ORDER BY id')).map(row=>row.name):[];
+      const ownership=tables.includes('test_site_builds')?await dbQuery('SELECT owner,hostname,ready,build_id FROM test_site_builds'):null;
+      const migrations=loadMigrations();
+      const probe=migrations.slice(0,ledger.length).flatMap(x=>x.tables).filter(table=>tables.includes(table));
+      const counts={};if(probe.length){for(const row of await dbQuery(probe.map(table=>`SELECT '${table}' AS t,COUNT(*) AS n FROM ${table}`).join(';')))counts[row.t]=row.n;}
+      const previousPath=resolve(OUT,'previous-deployment-result.json');
+      const previous=existsSync(previousPath)?JSON.parse(readFileSync(previousPath,'utf8')):null;
+      assessment=assessExistingDatabase({expectedName:dbName,database:{name:db.name,uuid:db.uuid},tables,ledger,migrations,counts,ownership,previous,resumeDatabaseId:process.env.SCHOOL_TEST_RESUME_DATABASE_ID||undefined,manifest:m});
+      report.existing_database={id:db.uuid,name:db.name,created_at:db.created_at??null,tables,migration_ledger:ledger,row_counts:counts,assessment};
+      if(assessment.action==='stop'){report.status='BLOCKED_RESUME_UNVERIFIED';throw new Error(assessment.reason);}
+    }
+    const alreadyReady=assessment.action==='skip_import';
     configPath=resolve(OUT,'wrangler.test.json');let config=configuration(ROOT,account,db?.uuid??'00000000-0000-0000-0000-000000000002');config.d1_databases[0].database_name=dbName;writeFileSync(configPath,JSON.stringify(config,null,2));
     run(['deploy','--config',configPath,'--dry-run']);
     if(!db){db=await result('/accounts/'+account+'/d1/database','POST',{name:dbName,primary_location_hint:'apac'});report.writes_performed=true;}
@@ -104,7 +159,7 @@ async function main(){
     const missing=await fetch('https://'+HOST+'/api/not-found',{redirect:'error',signal:AbortSignal.timeout(10000)});if(missing.status!==404||!missing.headers.get('content-type')?.includes('application/json'))throw new Error('API 404 boundary failed');
     const robots=await fetch('https://'+HOST+'/robots.txt',{redirect:'error',signal:AbortSignal.timeout(10000)});if(!(await robots.text()).includes('Disallow: /'))throw new Error('Test-site indexing guard failed');
     report.status='LIVE_VERIFIED';report.url='https://'+HOST;report.verified_at=new Date().toISOString();
-  }catch(error){report.status=report.status==='DEPLOYED_AWAITING_HTTPS'?'DEPLOYED_NOT_VERIFIED':'BLOCKED';report.reason=error instanceof Error?error.message:'Deployment failed';process.exitCode=1;}
+  }catch(error){report.status=report.status==='DEPLOYED_AWAITING_HTTPS'?'DEPLOYED_NOT_VERIFIED':report.status==='BLOCKED_RESUME_UNVERIFIED'?report.status:'BLOCKED';report.reason=error instanceof Error?error.message:'Deployment failed';process.exitCode=1;}
   finally{reportSave();console.log(JSON.stringify({status:report.status,hostname:HOST,writes_performed:report.writes_performed,reason:report.reason??null}));if(process.env.GITHUB_STEP_SUMMARY)appendFileSync(process.env.GITHUB_STEP_SUMMARY,'## Test deployment\n```json\n'+JSON.stringify(report,null,2)+'\n```\n');}
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href)main().catch(error=>{console.error(error.message);process.exitCode=1;});

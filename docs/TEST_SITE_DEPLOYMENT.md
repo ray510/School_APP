@@ -18,13 +18,37 @@
 
 ## 一次執行流程
 
-工作流程：`.github/workflows/test-site-release.yml`，顯示名稱 **Real data and finpulsx test deployment**。
+工作流程：`.github/workflows/test-site-release.yml`，顯示名稱 **Real data and finpulsx test deployment**。**只由 `workflow_dispatch` 觸發**；push 不會自動部署，因為每次重新生成資料包都會得到新的 build ID，進而建立第二個測試資料庫。
 
-`prepare`：frozen install → typecheck/lint/tests → 下載四個官方來源 → 生成 staging 前端及真實資料包 → SQLite 匯入重播與外鍵檢查 → 真正本機 D1 匯入 → desktop/mobile Chromium 驗收 → 保存資料及網站 artifact。
+兩個輸入：
 
-`deploy`：讀取 staging 憑證 → 查證帳戶／zone／DNS 衝突及帳戶總額度 → dry-run → 建立獨立測試 D1 → migration／資料匯入／資料庫核對 → 部署單一 Custom Domain → HTTPS、API、年度來源與禁止索引驗收。
+| 輸入 | 意義 |
+|---|---|
+| `reuse_package_run_id` | 重用該 run 的 `school-test-site-package` artifact（真實資料包）。留空＝重新下載來源並生成新資料包（新 build ID、新測試 DB）。 |
+| `resume_database_id` | 當同名測試 DB 已存在但沒有 ownership 表時，允許續跑的 DB ID；必須與該 run 的 `deployment-result.json` 一致。留空＝不允許續跑。 |
 
-只有最後結果為 `LIVE_VERIFIED` 才代表實際網址已驗收；`BLOCKED_MISSING_CREDENTIALS`、`BLOCKED`、`DEPLOYED_NOT_VERIFIED` 均不等於測試站可用。
+`prepare`（重用路徑）：frozen install → typecheck/lint/tests → 下載指定 run 的資料包及 deployment-result artifact → 逐塊 SQL hash、四個來源原始檔 hash、年度原文筆數與 manifest 互相核對 → **以目前 commit 重建 staging 前端**，再疊回資料包的年度原文與 `test-data-report.json` → 寫入 `package-provenance.json`（資料包 build ID、資料來源 commit、前端 commit）→ 真正本機 D1 套用 migration 及匯入 → HTTP smoke → desktop/mobile Chromium 驗收 → 保存 artifact。
+
+`prepare`（全新路徑，`reuse_package_run_id` 留空）：同上，但先下載四個官方來源並生成新的資料包。
+
+`deploy`：讀取 staging 憑證 → 查證帳戶／zone／DNS 衝突及帳戶總額度 → dry-run → 依 build ID 找同名 D1；不存在則建立；已存在則**先唯讀讀取 schema、migration ledger 及各表筆數**，再依下列規則決定 → migration／資料匯入／資料庫核對 → 部署單一 Custom Domain → HTTPS、API、年度來源與禁止索引驗收。
+
+既有 DB 的續跑規則（`scripts/deploy-test-site.mjs` 的 `assessExistingDatabase`，有回歸測試）：
+
+- 有 `test_site_builds`：owner／hostname／build ID 必須相符；`ready=1` 跳過匯入，否則重跑冪等匯入。
+- 沒有 `test_site_builds`（上次在資料包執行前中斷）：**缺表不等於允許接管**。必須同時滿足：DB 名稱由 manifest build ID 推出、`resume_database_id` 等於實際 DB ID、上次 deployment-result 的 DB ID／名稱／build ID／hostname 一致、ledger 是 repo migration 的前綴、schema 只含已套用 migration 的表、所有資料表為空。任一不符即 `BLOCKED_RESUME_UNVERIFIED`，不寫入、不刪庫、不另建 DB。
+
+只有最後結果為 `LIVE_VERIFIED` 才代表實際網址已驗收；`BLOCKED_MISSING_CREDENTIALS`、`BLOCKED`、`BLOCKED_RESUME_UNVERIFIED`、`DEPLOYED_NOT_VERIFIED` 均不等於測試站可用。
+
+## Migration 與 D1 遠端 splitter
+
+`wrangler d1 migrations apply --remote` 會把整份 migration 交給 D1 `/query` endpoint，由**伺服器端**切句；本機 `--local` 則用 Wrangler 自己的 splitter。兩者行為不同：伺服器端以大寫 `BEGIN` 進入 trigger 區塊、遇到第一個 `END` 就結束，**不會巢狀計算 `CASE … END`**，因此 trigger 內的 `SELECT CASE WHEN … THEN RAISE(…) END;` 會令遠端回 `incomplete input: SQLITE_ERROR [code: 7500]`，而本機通過。
+
+本 repo 的規則（`tests/regression/migration-guards.test.mjs` 會檢查）：
+
+- trigger 內的條件式中止一律寫成 `SELECT RAISE(ABORT,'CODE') WHERE <condition>;`，語義與原本的 `CASE` 寫法相同（條件為真才中止、NULL 不中止），但沒有第二個 `END`。
+- trigger 一律用大寫 `BEGIN`；`migrations/*.sql` 由 `.gitattributes` 固定 LF（Windows `core.autocrlf` 會在 checkout 時轉成 CRLF，同樣會令遠端失敗）。
+- 已套用的 migration 不改語義；本次只改寫遠端 ledger 尚未套用的 002–004。
 
 ## 憑證設定
 
@@ -57,7 +81,14 @@ Token 僅限擁有 `finpulsx.win` 的 Cloudflare 帳戶；zone 權限僅限 `fin
 - [GraphQL Analytics token](https://developers.cloudflare.com/analytics/graphql-api/getting-started/authentication/api-token-auth/)
 - [GitHub Actions deployment](https://developers.cloudflare.com/workers/ci-cd/external-cicd/github-actions/)
 
-已加入有效 Token 後，對資料準備成功而 deployment 失敗的 run 選 **Re-run failed jobs**。在 artifact 仍有效期間，會重用同一資料及網站包，不必重做來源下載；若 artifact 已過期，重跑整個工作流程。工作流程只在其檔案變更時自動触發，並提供 workflow_dispatch；尚未合併預設分支時，以已存在的 run 重跑為最直接路徑。
+程式修正後**不要**對舊 run 選 Re-run failed jobs——那會用舊 commit 的程式部署。改為在工作分支上以 `workflow_dispatch` 啟動新 run，並填入要重用的資料包 run ID 及可續跑的 DB ID，例如：
+
+```bash
+gh workflow run test-site-release.yml --ref fix/phase1-stabilization \
+  -f reuse_package_run_id=<資料包所在 run> -f resume_database_id=<上次 deployment-result 的 database_id>
+```
+
+artifact 仍有效（30 天）時會重用同一份已核對 hash 的資料包，只重建前端；artifact 過期則留空 `reuse_package_run_id` 重新生成（新 build ID、新 DB）。
 
 ## 測試資料不是示範資料
 

@@ -1,20 +1,32 @@
 name: Real data and finpulsx test deployment
+# Manual only. A push-triggered run would rebuild the data package, mint a new build ID and therefore create a
+# second test database; deployments must name the package they reuse and the database they may resume.
 on:
-  push:
-    branches: [fix/phase1-stabilization]
-    paths: [.github/workflows/test-site-release.yml]
   workflow_dispatch:
+    inputs:
+      reuse_package_run_id:
+        description: 'Workflow run ID whose school-test-site-package artifact is reused after hash verification. Empty = download sources and build a fresh package (new build ID, new test database).'
+        required: false
+        default: ''
+        type: string
+      resume_database_id:
+        description: 'Existing test D1 database ID that may be resumed when its ownership table is missing. Must match that run''s deployment-result artifact. Empty = never resume.'
+        required: false
+        default: ''
+        type: string
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: hk-school-test-site
   cancel-in-progress: false
 jobs:
   prepare:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     env:
       WRANGLER_SEND_METRICS: 'false'
+      REUSE_PACKAGE_RUN_ID: ${{ inputs.reuse_package_run_id }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -26,16 +38,44 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck && pnpm lint && pnpm test
       - name: Download official sources once and retain evidence
+        if: inputs.reuse_package_run_id == ''
         run: |
           mkdir -p artifacts
           pnpm school source probe --all --out artifacts/source-probe.json > artifacts/source-probe.log
           python scripts/annual-source-inspection.py
       - name: Build staging website and full eligible source package
+        if: inputs.reuse_package_run_id == ''
         env:
           SCHOOL_BUILD_ENV: staging
         run: |
           pnpm build:web
           pnpm exec tsx scripts/test-site-data.ts
+      - name: Download the hash-verified real-data package from the named run
+        if: inputs.reuse_package_run_id != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: school-test-site-package
+          run-id: ${{ inputs.reuse_package_run_id }}
+          github-token: ${{ github.token }}
+          path: reused/package
+      - name: Download that run's deployment result as database evidence
+        if: inputs.reuse_package_run_id != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: school-test-deployment-result
+          run-id: ${{ inputs.reuse_package_run_id }}
+          github-token: ${{ github.token }}
+          path: reused/result
+      - name: Verify package hashes, stage archive and data, record provenance
+        if: inputs.reuse_package_run_id != ''
+        run: node scripts/reuse-test-site-package.mjs stage --from reused/package --previous reused/result/deployment-result.json --run-id "$REUSE_PACKAGE_RUN_ID"
+      - name: Build staging website from this commit and overlay the reused source reference
+        if: inputs.reuse_package_run_id != ''
+        env:
+          SCHOOL_BUILD_ENV: staging
+        run: |
+          pnpm build:web
+          node scripts/reuse-test-site-package.mjs overlay --from reused/package
       - name: Validate data in actual local D1 and browsers
         shell: bash
         run: |
@@ -72,6 +112,7 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID }}
       SCHOOL_TEST_DEPLOY: schools-test.finpulsx.win
+      SCHOOL_TEST_RESUME_DATABASE_ID: ${{ inputs.resume_database_id }}
       WRANGLER_SEND_METRICS: 'false'
     steps:
       - uses: actions/checkout@v4
@@ -86,7 +127,7 @@ jobs:
         with:
           name: school-test-site-package
           path: .
-      - name: Provision isolated data, deploy only the test hostname and verify HTTPS
+      - name: Provision or resume isolated data, deploy only the test hostname and verify HTTPS
         run: node scripts/deploy-test-site.mjs --execute
       - uses: actions/upload-artifact@v4
         if: always()
@@ -96,4 +137,5 @@ jobs:
             artifacts/test-site/deployment-result.json
             artifacts/test-site/d1-import-result.json
             artifacts/test-site/wrangler.test.json
+            artifacts/test-site/package-provenance.json
           retention-days: 30

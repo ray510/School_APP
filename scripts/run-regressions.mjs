@@ -7,7 +7,7 @@ const tests = readdirSync(directory).filter(name => name.endsWith('.test.mjs')).
   .map(name => fileURLToPath(new URL(name, directory)));
 if (!tests.length) throw new Error('No regression tests found');
 const result = spawnSync(process.execPath, [
-  '--experimental-strip-types', '--import', fileURLToPath(new URL('register-workspace.mjs', directory)),
+  '--experimental-strip-types', '--import', new URL('register-workspace.mjs', directory).href,
   '--test', ...tests
 ], { cwd: root, stdio: 'inherit' });
 if (result.error) console.error(result.error.message);

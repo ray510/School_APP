@@ -19,14 +19,14 @@ CREATE TABLE annual_release_items (
   annual_profile_id TEXT NOT NULL REFERENCES annual_profile_versions(annual_profile_id),
   PRIMARY KEY(release_id,annual_profile_id)
 );
+-- Conditional aborts use SELECT RAISE(...) WHERE <condition> so the D1 remote statement splitter sees one compound block per trigger.
 CREATE TRIGGER annual_publication_guard BEFORE INSERT ON publication_commands
 WHEN NEW.channel LIKE 'annual:%' OR NEW.channel LIKE 'test:annual:%'
 BEGIN
-  SELECT CASE WHEN (SELECT item_count FROM release_manifests WHERE release_id=NEW.release_id)
-    !=(SELECT COUNT(*) FROM annual_release_items WHERE release_id=NEW.release_id)
-    THEN RAISE(ABORT,'ANNUAL_COUNT_MISMATCH') END;
-  SELECT CASE WHEN EXISTS(
+  SELECT RAISE(ABORT,'ANNUAL_COUNT_MISMATCH') WHERE (SELECT item_count FROM release_manifests WHERE release_id=NEW.release_id)
+    !=(SELECT COUNT(*) FROM annual_release_items WHERE release_id=NEW.release_id);
+  SELECT RAISE(ABORT,'ANNUAL_IDENTITY_NOT_VERIFIED') WHERE EXISTS(
     SELECT 1 FROM annual_release_items i JOIN annual_profile_versions p ON p.annual_profile_id=i.annual_profile_id
     WHERE i.release_id=NEW.release_id AND (p.identity_verified!=1 OR (NEW.channel LIKE 'annual:%' AND p.is_test!=0))
-  ) THEN RAISE(ABORT,'ANNUAL_IDENTITY_NOT_VERIFIED') END;
+  );
 END;
