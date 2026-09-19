@@ -7,6 +7,7 @@
   <p v-if="loading" role="status">正在載入同一資料版本的學校與 JEV 分析…</p>
   <p v-else-if="error" role="alert" class="alert">{{ error }} <button @click="load">重新載入</button></p>
   <template v-else-if="manifest&&schools.length>=2">
+   <KGDecisionComparison v-if="schools.every(s=>s.level==='KG')" :schools="schools" :year="year" :sources="manifest.sources" :cohort="cohort" />
    <section class="panel" aria-labelledby="jev-comparison-heading" data-testid="jev-comparison">
     <div class="heading"><div><p class="eyebrow">JEV EVIDENCE COMPARISON</p><h2 id="jev-comparison-heading">JEV 證據比較</h2></div><button @click="exportComparison">匯出比較分析 JSON</button></div>
     <p>使用已發布的 JEV 分析結果，並由程式整理共同點及記載差異；本頁不即時重跑模型，也不傳送你的私人筆記。</p>
@@ -38,9 +39,11 @@
 <script setup lang="ts">
 import {computed,ref,watch} from 'vue';
 import {RouterLink,useRoute} from 'vue-router';
-import {readJSON,safeLink,download,display,fieldsFor,type School,type Manifest} from './catalog';
+import {readJSON,safeLink,download,display,fieldsFor,type School,type Manifest,type Summary} from './catalog';
+import {loadSchoolDetails} from './profile-links';
+import KGDecisionComparison from './KGDecisionComparison.vue';
 import {cohortsFor,compareJev,comparisonStatus,cohortKey} from './comparison';
-const COMPARISON_VERSION='published-jev-evidence-comparison-v1';
+const COMPARISON_VERSION='source-linked-parent-comparison-v2';
 const route=useRoute(),schools=ref<School[]>([]),manifest=ref<Manifest|null>(null),loading=ref(true),error=ref(''),cohort=ref(''),topicFilter=ref('all');let generation=0;
 const year=computed(()=>{const n=Number(route.query.year);return Number.isInteger(n)&&n>=2000&&n<=2100?n:new Date().getFullYear()+1;});
 const cohorts=computed(()=>cohortsFor(schools.value,manifest.value?.sources??[]));
@@ -55,11 +58,12 @@ async function load(){const gen=++generation;loading.value=true;error.value='';s
  if(ids.length<2||ids.length>4||new Set(ids).size!==ids.length||ids.some(id=>!/^school_[a-f0-9]{24}$/.test(id)))throw new Error('請選擇兩至四個不同的同學段資料項目。');
  const m=await readJSON<Manifest>('/catalog-manifest.json');
  if(m.environment!=='production'||!/^([a-f0-9]){64}$/.test(m.data_id)||m.coverage_status!=='COMPLETE_SELECTED_OFFICIAL_RESOURCES')throw new Error('資料版本未通過核對。');
- const rows=await Promise.all(ids.map(id=>readJSON<School>('/data/'+m.data_id+'/schools/'+id+'.json')));
+ const index=await readJSON<Summary[]>('/data/'+m.data_id+'/index.json');
+ const rows=await Promise.all(ids.map(id=>loadSchoolDetails(m,id,index)));
  if(rows.some((s,i)=>s.id!==ids[i]||!Array.isArray(s.annual)||!Array.isArray(s.directory))||new Set(rows.map(s=>s.level)).size!==1)throw new Error('請比較相同學段的學校，並確認資料版本一致。');
  if(gen!==generation)return;manifest.value=m;schools.value=rows;cohort.value=cohortsFor(rows,m.sources)[0]?.key??'';topicFilter.value='all';
  }catch(e){if(gen===generation)error.value=e instanceof Error?e.message:'比較資料暫時未能載入。';}finally{if(gen===generation)loading.value=false;}}
-function exportComparison(){if(!manifest.value)return;download('hk-school-jev-comparison.json',JSON.stringify({schema:1,method:COMPARISON_VERSION,inference_mode:'REUSE_PUBLISHED_JEV_RESULTS',data_id:manifest.value.data_id,entry_year:year.value,cohort_key:cohort.value,quality_status:'NOT_HUMAN_CALIBRATED',school_ids:schools.value.map(s=>s.id),sources:manifest.value.sources.filter(s=>topics.value.some(t=>t.cells.some(c=>c.source_id===s.id))),topics:topics.value},null,2));}
+function exportComparison(){if(!manifest.value)return;download('hk-school-jev-comparison.json',JSON.stringify({schema:1,method:COMPARISON_VERSION,inference_mode:'REUSE_PUBLISHED_JEV_RESULTS',data_id:manifest.value.data_id,entry_year:year.value,cohort_key:cohort.value,quality_status:'NOT_HUMAN_CALIBRATED',school_ids:schools.value.map(s=>s.id),profile_links:schools.value.map(s=>({school_id:s.id,resolution:s.profile_resolution??null})),sources:manifest.value.sources.filter(s=>topics.value.some(t=>t.cells.some(c=>c.source_id===s.id))),topics:topics.value},null,2));}
 watch(()=>route.fullPath,()=>void load(),{immediate:true});
 </script>
 <style scoped>

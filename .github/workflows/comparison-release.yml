@@ -1,5 +1,5 @@
 name: JEV school comparison release
-# UI-only delivery with comparison no-transform privacy protection. No new inference keys or calls.
+# Repair verified school/campus profile links and add parent-facing comparisons. Preserve all source bytes and existing JEV results.
 on:
   push:
     branches: [release/full-catalog]
@@ -41,6 +41,7 @@ jobs:
           node scripts/production-metadata.mjs
           python scripts/full-catalog-verify.py
           python scripts/analytics-verify.py
+          pnpm exec tsx scripts/verify-parent-comparison.ts
           node scripts/production-deploy.mjs --config-only
       - name: Local workerd and real-data desktop/mobile comparison acceptance
         shell: bash
@@ -108,5 +109,6 @@ jobs:
             artifacts/production/deployment-result.json
             artifacts/production/backup-result.json
             artifacts/production/comparison-data-reuse.json
+            artifacts/production/parent-comparison-verification.json
             apps/web/test-results-production
           retention-days: 90

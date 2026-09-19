@@ -46,7 +46,8 @@ test('Jev comparison preserves missing profiles and invalid inference as unknown
  const bad=analytics.entries.find(e=>e.analysis_status==='INVALID_RESPONSE')!;expect(bad).toBeTruthy();
  const good=analytics.entries.find(e=>e.level===bad.level&&e.analysis_status==='ANALYZED'&&e.source_id===bad.source_id)!;
  await page.goto('/compare?ids='+bad.school_id+','+good.school_id);await expect(page.getByTestId('jev-comparison-table').locator('td[data-state="INVALID_RESPONSE"]')).toHaveCount(6);
- const missing=index.find(s=>s.level===bad.level&&!s.annual_rows)!;expect(missing).toBeTruthy();
+ const norm=(v:string)=>v.normalize('NFKC').toUpperCase().replace(/\s+/g,'');
+ const missing=index.find(s=>s.level===bad.level&&!s.annual_rows&&!index.some(a=>a.level===s.level&&a.annual_rows>0&&norm(a.name)===norm(s.name)))!;expect(missing).toBeTruthy();
  await page.goto('/compare?ids='+missing.id+','+good.school_id);await expect(page.getByTestId('jev-comparison-table').locator('td[data-state="NO_PROFILE"]')).toHaveCount(6);await expect(page.getByTestId('official-comparison')).toBeVisible();
  await page.reload();await expect(page.getByTestId('jev-comparison-table').locator('tbody tr')).toHaveCount(6);
  await page.goto('/compare?ids='+good.school_id+','+good.school_id);await expect(page.getByRole('alert')).toContainText('不同');
