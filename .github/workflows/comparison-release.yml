@@ -1,0 +1,112 @@
+name: JEV school comparison release
+# UI-only delivery. Reuse verified actual Jev inference, no new inference keys or calls.
+on:
+  push:
+    branches: [release/full-catalog]
+    paths: ['.github/workflows/comparison-release.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: hk-school-production
+  cancel-in-progress: false
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-node@v4
+        with: {node-version: '24'}
+      - run: corepack enable && corepack prepare pnpm@10.28.0 --activate
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck && pnpm lint && pnpm test
+      - run: python -m unittest discover -s tests/analytics -v
+      - name: Reuse explicit attempt-2 inference artifact, never the older same-name package
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: '10581563399'
+          run-id: '35434941445'
+          github-token: ${{ github.token }}
+          path: reused
+          merge-multiple: true
+      - name: Rebuild comparison UI with identical source and JEV result bytes
+        run: |
+          pnpm --filter @hk-school/web exec vite build --config vite.production.config.ts
+          python scripts/restore-comparison-data.py
+          node scripts/production-metadata.mjs
+          python scripts/full-catalog-verify.py
+          python scripts/analytics-verify.py
+          node scripts/production-deploy.mjs --config-only
+      - name: Local workerd and real-data desktop/mobile comparison acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm --filter @hk-school/web exec playwright install --with-deps chromium
+          pnpm exec wrangler dev --config artifacts/production/wrangler.production.json --local --port 8795 > artifacts/production/local-worker.log 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          for i in $(seq 1 45); do
+            if curl -fsS --max-time 2 http://127.0.0.1:8795/api/v1/health > artifacts/production/local-health.json; then break; fi
+            sleep 1
+          done
+          pnpm --filter @hk-school/web exec playwright test --config playwright.production.config.ts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jev-comparison-package-${{ github.run_attempt }}
+          path: |
+            apps/web/dist-production
+            apps/web/test-results-production
+            artifacts/production
+            artifacts/analytics
+            archive
+          retention-days: 90
+  publish:
+    needs: prepare
+    environment: production
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-node@v4
+        with: {node-version: '24'}
+      - run: corepack enable && corepack prepare pnpm@10.28.0 --activate
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with: {name: 'jev-comparison-package-${{ github.run_attempt }}', path: .}
+      - name: Confirm same-data durable release backup
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/production-archive.mjs
+      - name: Update only the existing production school site
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID }}
+          SCHOOL_PRODUCTION_DEPLOY: schools.finpulsx.win
+        run: node scripts/production-deploy.mjs --execute
+      - name: Live comparison and regression acceptance, including exact deployed commit
+        env:
+          SCHOOL_PRODUCTION_BASE_URL: https://schools.finpulsx.win
+          SCHOOL_PRODUCTION_EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          pnpm --filter @hk-school/web exec playwright install --with-deps chromium
+          pnpm --filter @hk-school/web exec playwright test --config playwright.production.config.ts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jev-comparison-live-${{ github.run_attempt }}
+          path: |
+            artifacts/production/deployment-result.json
+            artifacts/production/backup-result.json
+            artifacts/production/comparison-data-reuse.json
+            apps/web/test-results-production
+          retention-days: 90
