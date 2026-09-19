@@ -1,0 +1,46 @@
+import type {Classification} from '../classification';
+import type {Admission} from '../catalog';
+export interface FeeRow {grade:string;session:string;category:string;cents:number;periods:number;annual_cents:number;evidence_text?:string}
+export interface KGSummary {id:string;aliases:string[];name:string;address:string;district:string;sessions:string[];classification:Classification;profile_available:boolean;fee_status:string;fee_effective_from?:string;tuition_rows:FeeRow[];has_school_events:boolean;parent_analysis_status:string}
+export interface Fact {value:string;field:string;state:string;edition:string;row:number;record_sha256:string}
+export interface SourcePage {id:string;url:string;text:string;captured_at:string;sha256:string;fact_status:string}
+export interface Evidence {field:string;text:string;source_id:string;edition:string;row:number;record_sha256:string}
+export interface Selection {state:string;evidence:Evidence|null;question:string;confidence:number}
+export interface KGSchool extends KGSummary {profile:{fields:Record<string,string>;edition:string;row:number;record_sha256:string}|null;fees:{status:string;rows:FeeRow[];effective_from?:string;basis?:string;archived_url?:string;document?:{url:string;captured_at:string;sha256:string}};care:Fact[];admissions:Fact[];supplies:Fact[];website:string;phone:string;events:Admission[];new_pages:SourcePage[];application_steps:Array<{year:number;grade:string;action:string;source_url:string;evidence:string;checked_at:string}>;hours:Array<{session:string;start:string;end:string;year:number|null;source_url:string;evidence:string}>;parent_analysis:{status:string;model?:string;selections:Record<string,Selection>};topics:Array<{id:string;label:string;question:string;cell:{status:string;evidence?:Evidence|null}}>;vacancies:Array<{normalized:{reference_year:number|null;as_of:string;facts:{vacancies:Record<string,{code:string;label:string}>}}}>}
+export interface KGManifest {schema:number;phase:string;bundle_id:string;base_data_id:string;parent_cards:number;source_groups:number;annual_profiles:number;generated_at:string;fee_status_counts:Record<string,number>;inference:{model:string;status_counts:Record<string,number>;quality:string};school_pages_linked:number;human_usability_test:string}
+export const sessions:Record<string,string>={WD:'全日班',AM:'上午班',PM:'下午班'};
+export const topics:Record<string,string>={learning:'每日點學',settling:'適應同支援',admission:'報名要留意',care:'接送照顧'};
+export const money=(cents:number)=>'HK$'+(cents/100).toLocaleString('zh-HK',{minimumFractionDigits:cents%100?2:0,maximumFractionDigits:2});
+export function costs(rows:FeeRow[],grade:string,session:string):{rows:FeeRow[];subtotal:number|null;periods:string;complete:false}{
+ const selected=rows.filter(r=>r.grade===grade&&r.session===session);
+ if(selected.some(r=>!Number.isSafeInteger(r.annual_cents)||r.annual_cents!==r.cents*r.periods)||new Set(selected.map(r=>r.category)).size!==selected.length)throw new Error('收費原文計算不一致。');
+ return {rows:selected,subtotal:selected.some(r=>r.category==='tuition')?selected.reduce((s,r)=>s+r.annual_cents,0):null,periods:[...new Set(selected.map(r=>r.periods))].join('／'),complete:false};
+}
+export function feePeriod(date:string|undefined,year:number):string {return date?`${date} 起生效；${Number(date.slice(0,4))===year?'請確認目標學年仍適用':'不是 '+year+'/'+String(year+1).slice(-2)+' 已確認報價'}`:'尚未取得可計算的同校址收費文件';}
+export function sessionMeaning(s:{sessions:string[]},session:string):string {
+ const codes:Record<string,string>={WD:'全日',AM:'上午',PM:'下午'};
+ return s.sessions.some(x=>x.includes(codes[session]))?'名錄有'+sessions[session]+'記載；目標學年開班及接送時間待確認':'未有此班別的名錄記載；不等於已確認停辦';
+}
+export function noteStatus(s:KGSchool,grade:string,year:number):string {
+ const steps=s.application_steps?.filter(e=>e.year===year&&e.grade===grade)??[];if(steps.length)return '已核對本校當屆申請步驟，請按以下清單辦理。';
+ const events=s.events.filter(e=>e.entry_year===year);
+ if(grade==='K1'&&events.length)return '已收錄本校'+year+'/'+String(year+1).slice(-2)+'招生公告；按下方步驟辦理。';
+ return '先向學校確認 '+year+'/'+String(year+1).slice(-2)+' '+grade+' 申請方法；不沿用舊年份截止日。';
+}
+export function vacancyText(s:KGSchool,grade:string,year:number):string {
+ const rows=s.vacancies.filter(v=>v.normalized.reference_year===year);
+ if(!rows.length)return '未有目標學年的公布空缺；不是已確認沒有學位。';
+ const v=rows[0].normalized;return `${v.facts.vacancies[grade]?.label??'沒有相關資料'}（${year}/${String(year+1).slice(-2)}，截至${v.as_of}）；請向學校確認，並非即時剩餘位數。`;
+}
+export function selectedIds(ids:string[],index:KGSummary[]):KGSummary[]{
+ const map=new Map(index.flatMap(s=>s.aliases.map(a=>[a,s] as const)));const result=ids.map(i=>map.get(i));
+ if(result.some(s=>!s))throw new Error('找不到所選幼稚園。');
+ const unique=[...new Map(result.map(s=>[s!.id,s!])).values()];
+ if(unique.length!==ids.length)throw new Error('兩個網址指向同一份已核對校址資料，請選另一間幼稚園。');return unique;
+}
+export function careMatch(s:KGSchool,session:string,pickup:string,year:number):string {
+ if(!pickup)return '先確認正常放學及最遲接走時間；辦公時間不是照顧時間。';
+ const h=s.hours.filter(h=>h.session===session&&h.year===year);
+ if(h.length!==1)return '未有足夠同學年時間資料判斷能否於 '+pickup+' 接走；請直接向學校確認。';
+ return pickup<=h[0].end?'所載正常班別時間到 '+h[0].end+'；仍須確認接送規則。':'正常上課到 '+h[0].end+'，早於你希望的 '+pickup+'；延長照顧及費用未確認。';
+}

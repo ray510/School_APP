@@ -1,0 +1,37 @@
+<template>
+ <article class="kg-answer" :data-school="school.id">
+  <div class="kg-answer-title"><h2><RouterLink :to="link">{{ school.name }}</RouterLink></h2><button @click="$emit('save',school)">加入我的清單</button></div>
+  <p>{{ school.district }} · {{ school.address }}</p>
+  <p class="kg-small">{{ school.classification.kg_operator_type.label }} · {{ school.classification.kg_scheme_participation.label }}（按概覽版本）</p>
+  <div class="kg-answer-grid">
+   <section><h3>① 點報名</h3><p>{{ noteStatus(school,grade,year) }}</p><p>{{ vacancyText(school,grade,year) }}</p>
+    <template v-if="grade==='K1'&&school.events.some(e=>e.entry_year===year)"><p v-for="e in school.events.filter(e=>e.entry_year===year)" :key="e.id"><strong>{{ e.starts_on }}{{ e.ends_on?' 至 '+e.ends_on:'' }}</strong><br />{{ e.title }}<small>{{ e.applicability }}</small></p></template>
+    <ol v-if="school.application_steps?.some(s=>s.year===year&&s.grade===grade)"><li v-for="(step,n) in school.application_steps.filter(s=>s.year===year&&s.grade===grade)" :key="n">{{ step.action }}<small><a :href="safeLink(step.source_url)??undefined" target="_blank" rel="noopener noreferrer">校方公告</a> · 核對 {{ step.checked_at.slice(0,10) }}</small></li></ol><p><a v-if="safeLink(school.website)" :href="safeLink(school.website)!" target="_blank" rel="noopener noreferrer">到學校官方網站確認</a> <a v-if="telephone" :href="'tel:'+telephone">致電 {{ school.phone }}</a></p>
+    <details v-if="school.admissions.length"><summary>參考舊概覽申請方法及收費</summary><p v-for="f in school.admissions" :key="f.field">{{ f.field }}：{{ f.state==='UNKNOWN'?'未列明':display(f.value) }}<small>{{ f.edition }}</small></p><p>舊表格或全年接受申請的記載，不是當屆已確認受理承諾。</p></details>
+   </section>
+   <section><h3>② 要畀幾多錢</h3><template v-if="calculation.subtotal!==null"><strong class="kg-total">{{ money(calculation.subtotal) }}</strong><p>本版已知學費及膳食小計／年（{{ grade }} {{ sessions[session] }}）</p>
+     <p v-for="r in calculation.rows" :key="r.category">{{ r.category==='meal'?'膳食':'學費' }}：{{ money(r.cents) }} × {{ r.periods }} 期 = {{ money(r.annual_cents) }}</p>
+     <p v-if="budget>0">{{ calculation.subtotal>budget*100?'這個版本的已知小計已高於你的全年預算。':'已知小計在你設定的預算內，但其他支出及目標學年價目未齊，不能判定總成本符合預算。' }}</p>
+     <p class="kg-caution">只適用符合政府資助資格的情況；註冊費未重複相加。未計校車、用品及延長照顧，並非完整全年總額。</p>
+    </template><p v-else>此班別未有通過身份、版面及算式核對的收費數字；可先查核准收費文件。</p>
+    <p>{{ feePeriod(school.fees.effective_from,year) }}</p><a v-if="school.fees.archived_url" :href="school.fees.archived_url" target="_blank" rel="noopener noreferrer">查看本次核對的收費證明書</a>
+    <details v-if="school.supplies.length"><summary>用品及其他支出：逐項查看，不自動當成必付</summary><p v-for="f in school.supplies" :key="f.field">{{ f.field }}：{{ f.state==='UNKNOWN'?'未列明':display(f.value) }}<small>{{ f.edition }}；選購性質、期數及當屆價格未確認。</small></p></details>
+   </section>
+   <section><h3>③ 接送時間夾唔夾</h3><p>{{ sessionMeaning(school,session) }}</p><p>{{ careMatch(school,session,pickup,year) }}</p><p v-for="h in school.hours" :key="h.session+h.source_url">{{ sessions[h.session] }}：{{ h.start }}–{{ h.end }}（{{ h.year?h.year+'/'+String(h.year+1).slice(-2):'來源未註明學年' }}）<small>來源記載的正常上課時間，不是可免費延遲接走的保證。</small></p>
+    <p class="kg-caution">課室容額不是空缺，辦公／開放時間也不是幼兒可留校時間。</p>
+    <details v-if="school.care.length"><summary>概覽中的延長／暫托服務原文</summary><p v-for="f in school.care" :key="f.field">{{ f.field }}：{{ f.state==='UNKNOWN'?'未列明':display(f.value) }}<small>可能涉及附設幼兒中心；須確認年齡、班別及時間。{{ f.edition }}</small></p></details>
+   </section>
+  </div>
+  <section class="kg-evidence"><h3>JEV 幫你讀：{{ topicNames[focus] }}</h3>
+   <template v-if="selection?.evidence"><blockquote>{{ display(selection.evidence.text) }}</blockquote><p>{{ selection.state==='SUPPORTED'?'以上是模型從本校原文挑選的相關安排；不代表實際成效或當屆保證。':'這段文字仍待覆核，只供查閱，不當成已確認安排。' }}</p><p><strong>你可以問：</strong>{{ selection.question }}</p><details><summary>查看來源及分析方法</summary><p>{{ selection.evidence.edition }} · 欄位「{{ selection.evidence.field }}」· 第{{ selection.evidence.row }}筆</p><p>模型 {{ school.parent_analysis.model }}；模型只協助選出相關原文，不計算費用或判斷孩子是否適合，尚未經真人標註集校準。</p></details></template>
+   <template v-else><p>尚未找到足夠清楚的本校原文回答這個問題；不等於沒有提供。</p><p><strong>下一步：</strong>{{ fallbackQuestion }}</p></template>
+  </section>
+  <details v-if="school.new_pages.length"><summary>新擷取的學校公開資料（{{ school.new_pages.length }}份）</summary><article v-for="d in school.new_pages" :key="d.id"><a :href="safeLink(d.url)??undefined" target="_blank" rel="noopener noreferrer">查看校方原頁</a><small>擷取 {{ d.captured_at.slice(0,10) }}；內容年份按原文，不以擷取日代替。</small><p class="kg-source-text">{{ d.text }}</p></article></details>
+  <div class="kg-next"><h3>下一步做咩？</h3><p>把這間學校加入清單，先確認 {{ year }}/{{ String(year+1).slice(-2) }} {{ grade }} 申請方法、{{ sessions[session] }}實際時間及完整收費；再記錄學校回覆。</p><button class="light" @click="$emit('questions',school)">把查詢問題加入筆記</button> <RouterLink :to="'/schools/'+school.id+'?year='+year">查看完整官方資料</RouterLink></div>
+ </article>
+</template>
+<script setup lang="ts">
+import {computed} from 'vue';import {RouterLink} from 'vue-router';import {safeLink,display} from '../catalog';import {money,costs,feePeriod,sessions,topics as topicNames,noteStatus,vacancyText,sessionMeaning,careMatch,type KGSchool} from './model';
+const props=defineProps<{school:KGSchool;year:number;grade:string;session:string;pickup:string;budget:number;focus:string}>();defineEmits<{save:[school:KGSchool];questions:[school:KGSchool]}>();
+const calculation=computed(()=>costs(props.school.fees.rows,props.grade,props.session));const selection=computed(()=>props.school.parent_analysis.selections[props.focus]);const telephone=computed(()=>props.school.phone?.replace(/[^\d+]/g,''));const link=computed(()=>({path:'/kindergarten/'+props.school.id,query:{year:String(props.year),grade:props.grade,session:props.session}}));const fallbackQuestion=computed(()=>({learning:'請學校舉例說明每日遊戲、語文及探究活動如何安排。',settling:'請學校說明新生適應期、家長陪同及遇到適應困難時的支援。',admission:'請學校確認當屆截止日期、所需文件及申請入口。',care:'請學校確認正常放學、最遲接走及延長照顧費。'}[props.focus]??'請向學校確認目標學年實際安排。'));
+</script>
