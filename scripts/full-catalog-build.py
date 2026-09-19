@@ -3,6 +3,8 @@ Every original row and cell is assigned to exactly one displayed record and veri
 Same-name/address grouping is a presentation aid, never an official identity determination.
 """
 import csv, io, json, hashlib, pathlib, re, collections, unicodedata, datetime, zipfile, sys, html
+from school_classification import classify, VERSION as CLASSIFICATION_VERSION
+from school_analytics import assemble
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 DIST=ROOT/'apps/web/dist-production'
 OUT=ROOT/'artifacts/production'
@@ -58,7 +60,8 @@ def build():
             item=make_record(level,row['學校名稱'],row.get('地址',row.get('學校地址','')))
             item=records.setdefault(item['id'],item)
             if not item['district']:item['district']=row.get('地區',row.get('區域',''))
-            if not item['funding']:item['funding']=row.get('學校類別1',row.get('學校類別',''))
+            # KG operator nature must never be used as funding.
+            if level!='KG' and not item['funding']:item['funding']=row.get('學校類別1',row.get('學校類別',''))
             if not item['category']:item['category']=row.get('課程類別','')
             item['annual'].append({'source_id':source['id'],'edition':source['edition'],'row':n,'fields':row,'record_sha256':sha(dumps(row))})
             if item['directory']:item['association']='EXACT_REPORTED_NAME_ADDRESS_GROUP_NOT_CANONICAL_APPROVAL'
@@ -85,18 +88,23 @@ def build():
             item['school_catalog_ids']=[r['id'] for r in ordered if r['level']=='KG' and r['name']=='粉嶺神召會幼稚園']
             if not item['school_catalog_ids']:raise ValueError('Published school event has no displayed school')
         events.append(item)
-    subject={'schema':1,'sources':[s for s,_,_ in inputs],'records':ordered,'events':events}
+    source_map={s['id']:s for s,_,_ in inputs}
+    for item in ordered:
+        item['classification']=classify(item,source_map)
+    analytics=assemble(inputs,ordered)
+    subject={'analytics':analytics,'classification_version':CLASSIFICATION_VERSION,'schema':1,'sources':[s for s,_,_ in inputs],'records':ordered,'events':events}
     data_id=sha(dumps(subject));data=DIST/'data'/data_id
     index=[]
     for item in ordered:
-        compact={k:item[k] for k in ['id','name','english_name','address','district','level','funding','category','sessions','association']}
+        compact={k:item[k] for k in ['id','name','english_name','address','district','level','funding','category','sessions','association','classification']}
         compact['directory_rows']=len(item['directory']);compact['annual_rows']=len(item['annual'])
         compact['source_ids']=list(dict.fromkeys(([SOURCES[0]] if item['directory'] else [])+[x['source_id'] for x in item['annual']]))
         compact['school_numbers']=[d['source_key'] for d in item['directory']]
         index.append(compact);write(data/'schools'/ (item['id']+'.json'),item)
     write(data/'index.json',index);write(data/'events.json',events)
+    write(data/'analytics.json',analytics)
     stats={'source_record_count':len(seen_refs),'display_groups':len(ordered),'directory_display_groups':directory_count,'by_level':dict(collections.Counter(r['level'] for r in ordered)), 'directory_rows_by_level':dict(collections.Counter(r['level'] for r in ordered for _ in r['directory'])),'annual_rows':sum(len(r['annual']) for r in ordered),'unassociated_annual_rows':sum(len(r['annual']) for r in ordered if not r['directory']), 'grouping':'same reported name + address + level; original source rows retained; not certified unique school identities'}
-    manifest={'schema':1,'owner':'ray510/HK_APP','environment':'production','data_id':data_id,'generated_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'coverage_status':'COMPLETE_SELECTED_OFFICIAL_RESOURCES','sources':[s for s,_,_ in inputs],'stats':stats,'event_count':len(events),'event_coverage':'SELECTED_SOURCE_REVIEWED_NOT_ALL_SCHOOL_NOTICES','synthetic_records':0,'sample_limit':None,'identity_approval':'NOT_ASSERTED_BY_PRESENTATION_GROUPING','validation':{'all_source_rows_accounted':True,'all_original_cells_preserved':True,'independent_annual_counts':True},'official_current_primary_website':'https://www.chsc.hk/primary','version_note':'來源欄位以所示概覽版本為準；小學概覽2026網上版已發布，CSV版本與網站未必同步。'}
+    manifest={'analytics':{k:v for k,v in analytics.items() if k!='entries'},'classification_version':CLASSIFICATION_VERSION,'schema':1,'owner':'ray510/HK_APP','environment':'production','data_id':data_id,'generated_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'coverage_status':'COMPLETE_SELECTED_OFFICIAL_RESOURCES','sources':[s for s,_,_ in inputs],'stats':stats,'event_count':len(events),'event_coverage':'SELECTED_SOURCE_REVIEWED_NOT_ALL_SCHOOL_NOTICES','synthetic_records':0,'sample_limit':None,'identity_approval':'NOT_ASSERTED_BY_PRESENTATION_GROUPING','validation':{'all_source_rows_accounted':True,'all_original_cells_preserved':True,'independent_annual_counts':True},'official_current_primary_website':'https://www.chsc.hk/primary','version_note':'來源欄位以所示概覽版本為準；小學概覽2026網上版已發布，CSV版本與網站未必同步。'}
     write(data/'manifest.json',manifest)
     write(DIST/'catalog-manifest.json',manifest)
     OUT.mkdir(parents=True,exist_ok=True)

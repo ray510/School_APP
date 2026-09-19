@@ -1,5 +1,5 @@
 name: Full official catalog production release
-# User explicitly requested production and full source coverage. Does not mutate staging or databases.
+# Classification fix + bounded JEV evidence analysis + deterministic analytics. No D1 or staging changes.
 on:
   push:
     branches: [release/full-catalog]
@@ -12,8 +12,9 @@ concurrency:
   cancel-in-progress: false
 jobs:
   prepare:
+    environment: production
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
     env:
       WRANGLER_SEND_METRICS: 'false'
     steps:
@@ -24,6 +25,7 @@ jobs:
       - run: corepack enable && corepack prepare pnpm@10.28.0 --activate
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck && pnpm lint && pnpm test
+      - run: python -m unittest discover -s tests/analytics -v
       - name: Fresh official resources, no sample limits
         run: |
           mkdir -p artifacts/pilot
@@ -31,12 +33,30 @@ jobs:
           python scripts/annual-source-inspection.py
           command -v pdftotext || (sudo apt-get update && sudo apt-get install -y poppler-utils)
           python scripts/pilot-capture-sources.py
+      - uses: actions/cache@v4
+        with:
+          path: artifacts/jev-cache
+          key: jev-evidence-v1-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: jev-evidence-v1-${{ runner.os }}-
+      - name: JEV evidence analysis (missing access is recorded, never fabricated)
+        env:
+          JEV_ENABLE: '1'
+          JEV_PROVIDER: ${{ vars.JEV_PROVIDER || 'auto' }}
+          JEV_MAX_USD: '1.00'
+          JEV_MAX_REQUESTS: '2200'
+          TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          JEV_CLOUDFLARE_API_TOKEN: ${{ secrets.JEV_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID }}
+          JEV_INPUT_USD_PER_MILLION: ${{ vars.JEV_INPUT_USD_PER_MILLION }}
+        run: python scripts/jev_analysis.py
       - name: Build public production UI and reconcile every source row and cell
         run: |
           pnpm --filter @hk-school/web exec vite build --config vite.production.config.ts
           python scripts/full-catalog-build.py
           node scripts/production-metadata.mjs
           python scripts/full-catalog-verify.py
+          python scripts/analytics-verify.py
           node scripts/production-deploy.mjs --config-only
       - name: Actual workerd and production browser journeys
         shell: bash
@@ -59,6 +79,7 @@ jobs:
             apps/web/dist-production
             apps/web/test-results-production
             artifacts/production
+            artifacts/analytics
             archive
           retention-days: 90
   publish:
