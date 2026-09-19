@@ -1,0 +1,26 @@
+name: Classification and evidence analytics
+on:
+  push:
+    branches: [release/full-catalog]
+    paths: ['.github/workflows/analytics-delivery.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - name: Preserve exact tracked source for reproducible implementation
+        run: |
+          mkdir -p artifacts/analytics-source
+          git archive --format=tar.gz HEAD -o artifacts/analytics-source/source.tar.gz
+          git rev-parse HEAD > artifacts/analytics-source/commit.txt
+          sha256sum artifacts/analytics-source/source.tar.gz > artifacts/analytics-source/sha256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: analytics-source-baseline
+          path: artifacts/analytics-source
+          retention-days: 7
