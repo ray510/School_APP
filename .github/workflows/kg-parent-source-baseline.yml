@@ -1,0 +1,26 @@
+name: Kindergarten parent implementation source baseline
+on:
+  push:
+    branches: [release/full-catalog]
+    paths: [.github/workflows/kg-parent-source-baseline.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - name: Archive exact source for reproducible implementation
+        run: |
+          mkdir -p artifacts/kg-parent-baseline
+          git archive --format=tar.gz HEAD -o artifacts/kg-parent-baseline/source.tar.gz
+          git rev-parse HEAD > artifacts/kg-parent-baseline/commit.txt
+          sha256sum artifacts/kg-parent-baseline/source.tar.gz > artifacts/kg-parent-baseline/sha256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kg-parent-source-baseline
+          path: artifacts/kg-parent-baseline
+          retention-days: 7
