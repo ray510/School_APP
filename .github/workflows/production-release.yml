@@ -1,0 +1,105 @@
+name: Full official catalog production release
+# User explicitly requested production and full source coverage. Does not mutate staging or databases.
+on:
+  push:
+    branches: [release/full-catalog]
+    paths: ['.github/workflows/production-release.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: hk-school-production
+  cancel-in-progress: false
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-node@v4
+        with: {node-version: '24'}
+      - run: corepack enable && corepack prepare pnpm@10.28.0 --activate
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck && pnpm lint && pnpm test
+      - name: Fresh official resources, no sample limits
+        run: |
+          mkdir -p artifacts/pilot
+          pnpm school source probe --all --out artifacts/source-probe.json
+          python scripts/annual-source-inspection.py
+          command -v pdftotext || (sudo apt-get update && sudo apt-get install -y poppler-utils)
+          python scripts/pilot-capture-sources.py
+      - name: Build public production UI and reconcile every source row and cell
+        run: |
+          pnpm --filter @hk-school/web exec vite build --config vite.production.config.ts
+          python scripts/full-catalog-build.py
+          node scripts/production-metadata.mjs
+          python scripts/full-catalog-verify.py
+          node scripts/production-deploy.mjs --config-only
+      - name: Actual workerd and production browser journeys
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm --filter @hk-school/web exec playwright install --with-deps chromium
+          pnpm exec wrangler dev --config artifacts/production/wrangler.production.json --local --port 8795 > artifacts/production/local-worker.log 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          for i in $(seq 1 45); do
+            if curl -fsS --max-time 2 http://127.0.0.1:8795/api/v1/health > artifacts/production/local-health.json; then break; fi
+            sleep 1
+          done
+          pnpm --filter @hk-school/web exec playwright test --config playwright.production.config.ts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: full-catalog-production-package
+          path: |
+            apps/web/dist-production
+            apps/web/test-results-production
+            artifacts/production
+            archive
+          retention-days: 90
+  publish:
+    needs: prepare
+    environment: production
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-node@v4
+        with: {node-version: '24'}
+      - run: corepack enable && corepack prepare pnpm@10.28.0 --activate
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with: {name: full-catalog-production-package, path: .}
+      - name: Archive full source dataset in versioned repository release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/production-archive.mjs
+      - name: Deploy only schools.finpulsx.win after ownership and coverage gates
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID }}
+          SCHOOL_PRODUCTION_DEPLOY: schools.finpulsx.win
+        run: node scripts/production-deploy.mjs --execute
+      - name: Live production acceptance without deployment credentials
+        env:
+          SCHOOL_PRODUCTION_BASE_URL: https://schools.finpulsx.win
+        run: |
+          pnpm --filter @hk-school/web exec playwright install --with-deps chromium
+          pnpm --filter @hk-school/web exec playwright test --config playwright.production.config.ts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: full-catalog-production-live
+          path: |
+            artifacts/production/deployment-result.json
+            artifacts/production/backup-result.json
+            artifacts/production/wrangler.production.json
+            apps/web/test-results-production
+          retention-days: 90
