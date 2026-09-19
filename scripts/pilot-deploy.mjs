@@ -1,5 +1,5 @@
-/** Explicit update of the already-owned staging Worker and D1 only. Never creates databases or changes another host. */
-import {readFileSync,writeFileSync,mkdirSync} from 'node:fs';
+/** Update the already-owned staging Worker and D1 only. No database creation or other hostname. */
+import {readFileSync,writeFileSync,mkdirSync,readdirSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {createHash} from 'node:crypto';
@@ -40,7 +40,8 @@ async function main(){
   const database=(await api('/accounts/'+ACCOUNT+'/d1/database/'+DB)).result;if(database.uuid!==DB||database.name!=='hk-school-guide-test-'+BASE.slice(0,12))throw new Error('Existing DB identity mismatch');
   const domains=(await api('/accounts/'+ACCOUNT+'/workers/domains')).result;if(!Array.isArray(domains)||domains.filter(d=>d.hostname===HOST&&d.service===WORKER).length!==1)throw new Error('Existing staging domain ownership not verified');
   const owners=await query('SELECT owner,hostname,build_id,ready FROM test_site_builds');if(owners.length!==1||owners[0].owner!=='ray510/HK_APP'||owners[0].hostname!==HOST||owners[0].build_id!==BASE||owners[0].ready!==1)throw new Error('Staging ownership or baseline not ready');
-  const migrations=await query('SELECT name FROM d1_migrations ORDER BY name');const expected=['001_initial_schema.sql','002_catalog_events_publication.sql','003_event_publication_guard.sql','004_annual_profiles.sql'];if(JSON.stringify(migrations.map(x=>x.name))!==JSON.stringify(expected))throw new Error('Unexpected migration ledger; no migrations will be applied');
+  const migrations=await query('SELECT name FROM d1_migrations ORDER BY name');const expected=['001_initial_schema.sql','002_catalog_events_publication.sql','003_event_publication_guard.sql','004_annual_profiles.sql','005_publication_channel_namespace.sql'];const ledger=migrations.map(x=>x.name);const needsMigration=JSON.stringify(ledger)===JSON.stringify(expected.slice(0,4));if(!needsMigration&&JSON.stringify(ledger)!==JSON.stringify(expected))throw new Error('Unexpected migration ledger; only additive migration 005 is authorised');
+  if(JSON.stringify(readdirSync(resolve(ROOT,'migrations')).filter(n=>n.endsWith('.sql')).sort())!==JSON.stringify(expected))throw new Error('Unexpected repository migrations; refusing unreviewed schema updates');
   const baseline=await query("SELECT channel,release_id,revision FROM release_heads WHERE channel LIKE 'profiles:%' ORDER BY channel");
   const baseManifest=JSON.parse(readFileSync(resolve(ROOT,'artifacts/test-site/manifest.json'),'utf8'));if(baseline.length!==3||baseManifest.releases.some(r=>!baseline.some(b=>b.channel===r.channel&&b.release_id===r.release_id)))throw new Error('Baseline release context mismatch');
   const heads=await query('SELECT channel,release_id,revision FROM release_heads');for(const stream of m.manifests){const old=heads.find(h=>h.channel===stream.channel);if(old&&(old.release_id!==stream.release_id||old.revision!==1))throw new Error('Pilot stream already contains a different release; explicit new review required');}
@@ -51,9 +52,19 @@ async function main(){
   wrangler(['deploy','--config',configPath,'--dry-run']);
   report.previous_deployments=(await api('/accounts/'+ACCOUNT+'/workers/scripts/'+WORKER+'/deployments')).result;
   writeFileSync(resolve(OUT,'before.json'),JSON.stringify({baseline,heads,owners,migrations,previous_deployments:report.previous_deployments},null,2));
-  wrangler(['d1','export','DB','--config',configPath,'--remote','--output',resolve(OUT,'before.sql'),'--yes']);report.backup_sha256=sha(readFileSync(resolve(OUT,'before.sql')));save();
+  wrangler(['d1','export','DB','--config',configPath,'--remote','--output',resolve(OUT,'before.sql'),'--skip-confirmation']);report.backup_sha256=sha(readFileSync(resolve(OUT,'before.sql')));save();
+  if(needsMigration){
+   budgetCheck(await quota(),5000);report.writes_attempted=true;save();
+   report.migration_sha256=sha(readFileSync(resolve(ROOT,'migrations/005_publication_channel_namespace.sql')));
+   wrangler(['d1','migrations','apply','DB','--config',configPath,'--remote']);
+  }
+  const afterLedger=await query('SELECT name FROM d1_migrations ORDER BY name');
+  if(JSON.stringify(afterLedger.map(x=>x.name))!==JSON.stringify(expected))throw new Error('Migration 005 ledger verification failed');
+  const guards=await query("SELECT name FROM sqlite_master WHERE type='trigger' ORDER BY name");
+  if(JSON.stringify(guards.map(x=>x.name))!==JSON.stringify(['annual_publication_guard','event_publication_guard','publication_apply','publication_guard']))throw new Error('Publication protections missing after migration');
+  report.migration_005_applied=needsMigration;report.migrations=afterLedger;report.metric_scope='D1 query API calls made here only; Wrangler migration/export and public HTTP reads are not included';save();
   if(!alreadyPublished){budgetCheck(await quota(),5000);for(const statement of sql.slice(0,7))await query(statement,true);}
-  // Stage first, then deploy a backwards-compatible reader, then atomically publish each reviewed stream.
+  // Stage first, deploy a backwards-compatible reader, then atomically publish each reviewed stream.
   wrangler(['deploy','--config',configPath]);report.status='WORKER_DEPLOYED';save();
   if(!alreadyPublished)for(const statement of sql.slice(7))await query(statement,true);
   const after=await query("SELECT channel,release_id,revision FROM release_heads WHERE channel LIKE 'profiles:%' ORDER BY channel");if(JSON.stringify(after)!==JSON.stringify(baseline))throw new Error('Baseline release changed unexpectedly');

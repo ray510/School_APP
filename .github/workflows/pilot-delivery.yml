@@ -1,5 +1,5 @@
 name: Reviewed school pilot delivery
-# Explicit one-host pilot update requested by the repository owner. Other pushes do not deploy.
+# Explicit one-host pilot update; additive 005 fixes a verified directory/annual namespace collision.
 on:
   push:
     branches: [fix/phase1-stabilization]

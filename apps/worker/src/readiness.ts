@@ -1,7 +1,7 @@
 /** Read-only readiness; migration evidence is distinct from published data. */
 export type AppEnvironment='local'|'staging'|'production'|'invalid';
 export function readEnvironment(value:unknown):AppEnvironment{return value==='local'||value==='staging'||value==='production'?value:'invalid';}
-export const REQUIRED_MIGRATIONS=['001_initial_schema.sql','002_catalog_events_publication.sql','003_event_publication_guard.sql','004_annual_profiles.sql'] as const;
+export const REQUIRED_MIGRATIONS=['001_initial_schema.sql','002_catalog_events_publication.sql','003_event_publication_guard.sql','004_annual_profiles.sql','005_publication_channel_namespace.sql'] as const;
 export interface DatabaseReader{prepare(sql:string):{first<T=Record<string,unknown>>():Promise<T|null>;all<T=Record<string,unknown>>():Promise<{success:boolean;results:T[]}>};}
 export interface PublishedChannel{channel:string;release_id:string;revision:number;scope:string|null;entry_year_start:number|null;item_count:number;}
 export interface ReadinessData{environment:AppEnvironment;liveness:'ok';database:'not_checked'|'missing'|'ok'|'error';schema_version:string|null;readiness:'ok'|'empty'|'degraded'|'error';data_status:'unavailable'|'empty'|'published';public_release_id:string|null;public_release_ids:string[];timestamp:string;}
