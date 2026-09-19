@@ -1,0 +1,87 @@
+name: Education category metadata inventory
+on:
+  push:
+    branches: [research/education-source-inventory-20260919]
+    paths: [.github/workflows/education-source-inventory.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Read public official category and dataset metadata only
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p inventory/raw
+          python - <<'PY'
+          import urllib.request, urllib.parse, json, pathlib, hashlib, datetime, time, concurrent.futures, csv
+          root=pathlib.Path('inventory'); logs=[]
+          def fetch(url,path):
+              for attempt in range(3):
+                  try:
+                      req=urllib.request.Request(url,headers={'User-Agent':'HK-APP-Public-Source-Inventory/1.0','Accept':'application/json'})
+                      with urllib.request.urlopen(req,timeout=30) as r:
+                          raw=r.read(25_000_001)
+                          if len(raw)>25_000_000: raise ValueError('Metadata response too large')
+                          headers={k:r.headers.get(k) for k in ['Content-Type','Last-Modified','ETag']}
+                      obj=json.loads(raw)
+                      if obj.get('success') is not True:raise ValueError('Official API did not report success')
+                      path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(raw)
+                      logs.append({'url':url,'file':str(path),'sha256':hashlib.sha256(raw).hexdigest(),'bytes':len(raw),'retrieved_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'headers':headers})
+                      return obj['result']
+                  except Exception:
+                      if attempt==2:raise
+                      time.sleep(1+attempt)
+          tc=fetch('https://data.gov.hk/tc-data/api/3/action/group_show?id=education',root/'raw/education-group-tc.json')
+          en=fetch('https://data.gov.hk/en-data/api/3/action/group_show?id=education',root/'raw/education-group-en.json')
+          print('CATEGORY_KEYS',list(tc));print('CATEGORY_PACKAGE_COUNT',tc.get('package_count'))
+          packages=tc.get('packages',[])
+          if not packages:raise ValueError('No packages returned; cannot assert completeness')
+          names=[p['name'] if isinstance(p,dict) else p for p in packages]
+          if len(names)!=len(set(names)):raise ValueError('Duplicate package names in official category')
+          expected=tc.get('package_count')
+          if expected is not None and int(expected)!=len(names):raise ValueError(f'Incomplete group: count={expected}, returned={len(names)}')
+          en_packages=en.get('packages',[]);en_map={p['name']:p for p in en_packages if isinstance(p,dict)}
+          en_names={p['name'] if isinstance(p,dict) else p for p in en_packages}
+          if set(names)!=en_names:raise ValueError('TC and EN category membership differs')
+          def details(p):
+              if isinstance(p,dict) and p.get('title') and p.get('resources') is not None:return p
+              name=p['name'] if isinstance(p,dict) else p
+              return fetch('https://data.gov.hk/tc-data/api/3/action/package_show?id='+urllib.parse.quote(name),root/'raw/packages'/f'{name}.json')
+          with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:details_list=list(pool.map(details,packages))
+          output=[];resources=[]
+          for p in details_list:
+              enp=en_map.get(p['name'],{})
+              org=p.get('organization') or {};extra=p.get('extras',[])
+              entry={'dataset_id':p.get('id'),'dataset_name':p['name'],'title_tc':p.get('title'),'title_en':enp.get('title'),
+                'organization_id':org.get('name'),'organization_tc':org.get('title'),'organization_en':(enp.get('organization') or {}).get('title'),
+                'notes_tc':p.get('notes'),'notes_en':enp.get('notes'),'metadata_modified':p.get('metadata_modified'),
+                'state':p.get('state'),'groups':[g.get('name') for g in p.get('groups',[])],
+                'resource_count':len(p.get('resources',[])),'formats':sorted({str(r.get('format','')).upper() for r in p.get('resources',[])}),
+                'url':'https://data.gov.hk/tc-data/dataset/'+p['name'],'extras':extra,'license_title':p.get('license_title')}
+              output.append(entry)
+              for r in p.get('resources',[]):resources.append({'dataset_name':p['name'],'dataset_title_tc':p.get('title'),**r})
+          output.sort(key=lambda x:(x.get('organization_tc') or '',x['title_tc'] or ''))
+          (root/'datasets.json').write_text(json.dumps(output,ensure_ascii=False,indent=2),encoding='utf-8')
+          (root/'resources.json').write_text(json.dumps(resources,ensure_ascii=False,indent=2),encoding='utf-8')
+          fields=['dataset_name','title_tc','title_en','organization_tc','organization_en','resource_count','formats','metadata_modified','url','notes_tc']
+          with (root/'datasets.csv').open('w',encoding='utf-8-sig',newline='') as f:
+              w=csv.DictWriter(f,fieldnames=fields,extrasaction='ignore');w.writeheader()
+              for row in output:w.writerow({**row,'formats':' / '.join(row['formats'])})
+          from collections import Counter
+          report={'status':'COMPLETE_CATEGORY_MEMBERSHIP_VERIFIED','category':'education','dataset_count':len(output),'declared_package_count':expected,
+              'tc_en_membership_equal':True,'resource_entries':len(resources),'publishers':dict(Counter(x.get('organization_tc') or 'UNKNOWN' for x in output)),
+              'retrievals':logs,'scope':'Current official category metadata; resources enumerated but their data files not downloaded or quality-certified; no deployment, no AI inference, no Cloudflare access.'}
+          (root/'verification.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
+          print(json.dumps({k:v for k,v in report.items() if k!='retrievals'},ensure_ascii=False))
+          for i,p in enumerate(output,1):print(i,p['organization_tc'],p['title_tc'],p['dataset_name'],sep='\t')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: official-education-category-inventory
+          path: inventory
+          retention-days: 90
