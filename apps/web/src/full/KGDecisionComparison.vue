@@ -11,7 +11,7 @@
      <h4>教學模式</h4><blockquote>{{ excerpt(s,teachingField(s),'curriculum')||'此欄位未提供可用文字。' }}</blockquote>
      <h4>語文安排</h4><blockquote v-if="excerpt(s,'學習_教學模式及活動','language')">{{ excerpt(s,'學習_教學模式及活動','language') }}</blockquote><p v-else>此教學欄位未列出可直接擷取的語文安排，請核對全文及向學校查詢。</p>
      <h4>全日照顧要留意</h4><p data-testid="care-meaning">{{ careMeaning(s,profile(s)) }}</p>
-     <p class="quick-facts">註冊課室：{{ display(profile(s)?.fields['註冊課室數目']) }}　音樂室：{{ display(profile(s)?.fields['音樂室']) }}　戶外遊戲場地：{{ display(profile(s)?.fields['戶外遊戲場地']) }}</p>
+     <p class="quick-facts">註冊課室：{{ display(profile(s)?.fields['註冊課室數目']) }} · 音樂室：{{ display(profile(s)?.fields['音樂室']) }} · 戶外遊戲場地：{{ display(profile(s)?.fields['戶外遊戲場地']) }}</p>
      <details><summary>來源與配對依據</summary><p>{{ profile(s)?.edition }} · 第 {{ profile(s)?.row }} 筆。上方引文取自「課程規劃／學習_教學模式及活動」，下方可查看完整原文。</p><p v-for="p in s.profile_resolution?.links" :key="p.record_sha256">學校／校址：{{ p.school_number }}／{{ p.location_id }}；{{ p.checks.join('、') }}<span v-if="p.address_differs">。地址版本有差異：名錄「{{ p.directory_address }}」；概覽「{{ p.profile_address }}」。沒有隱藏或改寫地址。</span></p><a v-if="sourceUrl(s)" :href="sourceUrl(s)!" target="_blank" rel="noopener noreferrer">官方概覽來源</a></details>
     </template>
     <p v-else class="notice">暫未能以來源證據確認同校址概覽；不借用其他學校資料。此限制只影響本項，其他學校仍顯示完整內容。</p>

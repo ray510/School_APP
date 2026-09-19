@@ -1,5 +1,5 @@
 name: JEV school comparison release
-# Repair verified school/campus profile links and add parent-facing comparisons. Preserve all source bytes and existing JEV results.
+# Source-linked parent comparisons: clean typography and provenance wording; keep all acceptance assertions.
 on:
   push:
     branches: [release/full-catalog]
