@@ -1,5 +1,5 @@
 <template>
- <section><p class="eyebrow">SOURCE-BASED ANALYTICS</p><h1>資料分析</h1><p>統計由程式計算。每次只選一份來源版本，分母是原始紀錄數，不是去重後獨立學校數；不混合名錄與概覽作學校排名。</p>
+ <section><p class="eyebrow">SOURCE-BASED ANALYTICS</p><h1>資料分析</h1><p><RouterLink to="/sources">資料來源中心：查看所有來源、欄位及新增四主題統計 →</RouterLink></p><p>統計由程式計算。每次只選一份來源版本，分母是原始紀錄數，不是去重後獨立學校數；不混合名錄與概覽作學校排名。</p>
  <p v-if="error" role="alert">{{ error }}</p><p v-else-if="!data" role="status">正在載入分析資料…</p>
  <template v-else>
   <div class="panel"><h2>JEV 分析狀態</h2><p v-if="data.provider">供應商：{{ data.provider }} · 模型：{{ data.model_returned.join('、')||data.model_requested }}</p><p v-else>未取得可用的 JEV 分析結果；分類與下方來源統計仍可使用。</p>
@@ -20,8 +20,8 @@
  </template></section>
 </template>
 <script setup lang="ts">
-import {ref,computed,watch} from 'vue';import {RouterLink} from 'vue-router';import {readJSON,download,levels,type Manifest} from './catalog';import {dimensionCounts,percentage,tagCounts,tagNames,statusNames,type AnalyticsData} from './analytics';
-const props=defineProps<{manifest:Manifest}>();const data=ref<AnalyticsData|null>(null),error=ref('');const sourceId=ref('chsc-primary-profiles'),level=ref(''),district=ref(''),tag=ref(''),status=ref(''),limit=ref(40);
+import {ref,computed,watch} from 'vue';import {RouterLink,useRoute} from 'vue-router';import {readJSON,download,levels,type Manifest} from './catalog';import {dimensionCounts,percentage,tagCounts,tagNames,statusNames,type AnalyticsData} from './analytics';
+const props=defineProps<{manifest:Manifest}>();const data=ref<AnalyticsData|null>(null),error=ref('');const route=useRoute();const sourceId=ref(typeof route.query.source==='string'&&props.manifest.sources.some(s=>s.id===route.query.source)?route.query.source:'chsc-primary-profiles'),level=ref(''),district=ref(''),tag=ref(''),status=ref(''),limit=ref(40);
 const sourceRows=computed(()=>data.value?.entries.filter(r=>r.source_id===sourceId.value)??[]);
 const districts=computed(()=>[...new Set(sourceRows.value.map(r=>r.district))].filter(Boolean).sort());
 const cohort=computed(()=>sourceRows.value.filter(r=>(!level.value||r.level===level.value)&&(!district.value||r.district===district.value)));
@@ -31,8 +31,6 @@ watch(sourceId,()=>{district.value='';level.value='';tag.value='';status.value='
 watch(()=>props.manifest.data_id,async(id)=>{try{const d=await readJSON<AnalyticsData>('/data/'+id+'/analytics.json');if(d.schema!==1||d.cohort_unit!=='SOURCE_RECORD'||d.entries.length!==props.manifest.stats.source_record_count)throw new Error('分析資料版本或分母不一致。');data.value=d;}catch(e){error.value=String(e);}},{immediate:true});
 function exportRows(){download('school-source-analysis.json',JSON.stringify({data_id:props.manifest.data_id,source_id:sourceId.value,denominator:cohort.value.length,unit:'SOURCE_RECORD',quality_status:data.value?.quality_status,records:matches.value},null,2));}
 </script>
-
 <style>
-/* Evidence analytics uses native tables and exact-count denominators, not rankings. */
 .analytics-table{width:100%;border-collapse:collapse;margin:1rem 0;text-align:left}.analytics-table th,.analytics-table td{padding:.7rem;border-bottom:1px solid #dfe5e5}.analytics-records{padding-left:1.25rem}.analytics-records li{margin:.6rem 0}.tag-evidence{padding:.75rem 0;border-bottom:1px solid #dfe5e5}.tag-evidence summary{cursor:pointer}.tag-evidence blockquote{white-space:pre-wrap;overflow-wrap:anywhere;border-left:3px solid #28666b;padding:1rem;margin:.7rem 0;background:#f4f8f7}.classification-field{margin-bottom:1rem}.classification-field p{overflow-wrap:anywhere}
 </style>

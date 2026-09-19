@@ -1,0 +1,45 @@
+<template>
+ <header><div class="wrap header"><RouterLink class="brand" to="/">香港選校年鑑<span>HK SCHOOL GUIDE</span></RouterLink><nav aria-label="主要導覽"><RouterLink to="/schools">全港選校</RouterLink><RouterLink to="/analytics">資料分析</RouterLink><RouterLink to="/sources">資料來源中心</RouterLink><RouterLink to="/shortlist">私人清單</RouterLink></nav></div></header>
+ <main class="wrap source-hub"><p class="eyebrow">DATA SOURCES & EVIDENCE</p><h1>資料來源與完整性</h1><p>資料來源中心：由官方原始資料，到 JEV 分析，再到選校比較。每一層分開交代，知道內容從哪裡來、屬於哪個版本。</p>
+ <p v-if="error" role="alert">{{ error }}</p><p v-if="!manifest&&!error" role="status">正在核對資料版本…</p>
+ <template v-if="manifest">
+  <section class="source-totals" aria-label="資料範圍"><div><strong>{{ manifest.sources.length }}</strong>份官方名錄／概覽</div><div><strong>{{ manifest.stats.source_record_count.toLocaleString() }}</strong>筆原始來源紀錄</div><div><strong>{{ events.length }}</strong>項已整理招生事件</div><div><strong>JEV</strong>獨立的 AI 衍生分析</div></section>
+  <p class="notice">完整指下列資源版本的全部紀錄及欄位，不是全港每校的最新公告皆已收錄。紀錄數包含不同校址、班別及年度，不是獨立學校數。</p>
+  <nav class="actions" aria-label="來源分類"><a href="#official-sources">官方名錄與概覽</a><a href="#notice-sources">招生公告來源</a><a href="#jev-source">JEV 方法及用量</a><a href="#coverage-gaps">尚未涵蓋</a></nav>
+  <label class="source-search">搜尋來源或欄位名稱<input v-model="query" placeholder="例如：學費、教學、幼稚園、地址" /></label>
+  <section id="official-sources"><h2>官方名錄與年度概覽</h2><div class="source-table"><table><thead><tr><th>來源與版本</th><th>原始／收錄筆數</th><th>欄位</th><th>該資源覆蓋</th></tr></thead><tbody><tr v-for="s in manifest.sources" :key="s.id"><td><a :href="'#'+s.id">{{ s.label }}</a><small>{{ s.edition }}</small></td><td>{{ s.rows }} / {{ s.published_rows }}</td><td>{{ s.columns }}</td><td><strong>{{ s.rows?((s.published_rows/s.rows)*100).toFixed(0):'—' }}%</strong><small>排除 {{ s.excluded_rows }} 筆</small></td></tr></tbody></table></div>
+   <article v-for="s in visible" :id="s.id" :key="s.id" class="panel source-card" :data-source="s.id"><p class="eyebrow">官方原始來源 · {{ owner(s.id) }}</p><h2>{{ s.label }}</h2><p>{{ s.edition }}</p><p>{{ purposes[s.id] }}</p><p><b>已收錄：</b>{{ s.published_rows }} 筆、每筆 {{ s.columns }} 個原始欄位。</p><p><b>實際擷取：</b>{{ when(s.fetched_at) }}。擷取日期不是資料所屬學年。</p>
+    <p v-if="s.id!=='edb-school-directory'"><b>原有六主題：</b>{{ analysed(s.id) }} / {{ s.rows }} 筆有有效 JEV 回應。<span v-if="extraCounts">新增四主題逐項狀態可在下方查看。</span></p>
+    <p v-else>資助分類、地區、校址、聯絡等結構欄位由程式讀取，不由 JEV 猜測。</p>
+    <div class="actions"><a v-if="safeLink(s.catalog_url)" :href="s.catalog_url" target="_blank" rel="noopener noreferrer">官方資料目錄 ↗</a><a v-if="safeLink(s.url)" :href="s.url" target="_blank" rel="noopener noreferrer">本版本原始資源 ↗</a><a :href="'/downloads/sources/'+s.id+'.csv'" download>下載已封存 CSV</a><RouterLink :to="{path:'/analytics',query:{source:s.id}}">查看此来源統計 →</RouterLink></div>
+    <details :open="selected===s.id||!!query"><summary>全部 {{ s.columns }} 個欄位及來源 hash</summary><div class="field-chips"><span v-for="f in (s.headers||[]).filter(f=>!query||f.includes(query)||s.label.includes(query))" :key="f">{{ f }}</span></div><p>原始 SHA-256：<code>{{ s.sha256 }}</code></p></details>
+    <details v-if="extraCounts?.[s.id]"><summary>新增 JEV 主題的完整來源分母</summary><table><thead><tr><th>主題</th><th>處理狀態與數量</th></tr></thead><tbody><tr v-for="(counts,tag) in extraCounts[s.id]" :key="tag"><th>{{ extendedTopics[tag]?.label||tag }}</th><td><span v-for="(n,state) in counts" :key="state">{{ stateLabel(state) }}：{{ n }}； </span></td></tr></tbody></table></details>
+   </article>
+   <p v-if="!visible.length">沒有符合的來源或欄位。</p>
+  </section>
+  <section id="notice-sources" class="panel"><h2>招生公告來源</h2><p>以下是實際收錄的公告，不是整個部門或學校網站的完整爬取。報名日期由原文及程式核對，不由 JEV 生成。</p><article v-for="s in notices" :key="s.url" class="notice-source"><h3>{{ s.id }}</h3><p>{{ s.count }} 項事件 · 最近核對 {{ when(s.checked) }}</p><a v-if="safeLink(s.url)" :href="s.url" target="_blank" rel="noopener noreferrer">查看公告原文 ↗</a><details><summary>已收錄事件及證據</summary><p v-for="e in s.events" :key="e.id">{{ e.title }} · {{ e.starts_on }}<small>{{ e.applicability }}</small></p><code>{{ s.hash }}</code></details></article></section>
+  <section id="jev-source" class="panel"><h2>JEV 是分析工具，不是學校原始資料來源</h2><p>原有六個主題及新增四個主題，均根據公開概覽片段判斷。每項肯定標籤必須有可逐字對回來源的引文；沒有把其他校址、家長筆記或網上評論當成證據。</p>
+   <p v-if="insights">新增模型：{{ insights.model }} · 分析時間 {{ when(insights.generated_at) }} · 有效回應 {{ insights.status_counts.ANALYZED||0 }} / {{ insights.annual_rows }} 筆。</p><p v-if="insights">新增批次 {{ insights.usage.requests }} 次呼叫；輸入 tokens {{ insights.usage.input_tokens?.toLocaleString()??'供應商未回報' }}。實際處理狀態保留在下載資料，不以程式成功代替模型驗證。</p>
+   <p class="notice">模型尚未經真人標註學校資料集校準。信心不是正確率；未提及不等於沒有提供；共同提及不等於教學品質相同。官方數值、日期及比例由程式處理。</p>
+   <div class="actions"><a href="https://docs.typesafe.ai/api" target="_blank" rel="noopener noreferrer">JEV 官方 API</a><a href="/downloads/school-analysis.zip" download>下載完整分析及來源索引</a><a href="/insights-manifest.json">分析版本 JSON</a></div>
+  </section>
+  <section id="coverage-gaps" class="panel"><h2>尚未涵蓋及版本限制</h2><p>{{ manifest.version_note }}</p><p>不是即時學額、輪候狀態、全港所有學校最新報名公告或所有收費證明書內容。尚未配對的資料仍保留原文，未以模糊同名強行合併。</p><p>新增分類及分析不修改原始資料。各來源更新不同步，因此比較必須核對所屬年份；目標入學學年不會改寫概覽版本。</p><p>私人筆記只存 IndexedDB，不送去 JEV。資料來源或配對有疑問，可下載含欄位及 hash 的證據交予網站維護者核對。</p></section>
+  <section class="panel"><h2>整份資料及使用條款</h2><div class="actions"><a href="/downloads/school-data.zip" download>下載官方全量來源 ZIP</a><a href="/catalog-manifest.json">原始資料完整性報告</a><a href="/downloads/checksums.json">原始資料 checksum</a><a href="https://data.gov.hk/tc/terms-and-conditions" target="_blank" rel="noopener noreferrer">DATA.GOV.HK 使用條款</a></div><p>原始資料權利人：教育局及家庭與學校合作事宜委員會；公告按個別發布機構標示。本網站為獨立非官方整理服務。</p><p>原始版本：<code>{{ manifest.data_id }}</code></p><p v-if="insights">分析版本：<code>{{ insights.analysis_id }}</code></p></section>
+ </template></main>
+</template>
+<script setup lang="ts">
+import {ref,computed,onMounted} from 'vue';import {RouterLink,useRoute} from 'vue-router';import {readJSON,safeLink,type Manifest,type Source,type Admission} from './catalog';import type {AnalyticsData} from './analytics';import {statusNames} from './analytics';import {insightManifest,extendedTopics,type InsightManifest} from './sitewide';
+interface HubManifest extends Manifest {sources:Array<Source&{headers?:string[]}>}
+interface Notice extends Admission {source_id?:string}
+const manifest=ref<HubManifest|null>(null),insights=ref<InsightManifest|null>(null),analytics=ref<AnalyticsData|null>(null),events=ref<Notice[]>([]),error=ref(''),query=ref('');const route=useRoute();const selected=computed(()=>String(route.query.source??''));
+const extraCounts=ref<Record<string,Record<string,Record<string,number>>>|null>(null);
+const purposes:Record<string,string>={'edb-school-directory':'學校地址、校號、學段、授課時間及官方資助分類。可按班別或校址出現多筆紀錄。','edb-kg-profiles':'幼稚園營辦性質、教育計劃、課程、教學、學生支援、設施及收費文件入口。','chsc-primary-profiles':'小學校網、教學語言、時間安排、校車、升中聯繫及學校自述的教學支援。','chsc-secondary-profiles':'中學課程、語文政策、學生支援、收生說明及概覽列出的費用資料。'};
+const owner=(id:string)=>id.startsWith('edb-')?'教育局':'家庭與學校合作事宜委員會';const when=(s:string)=>new Date(s).toLocaleString('zh-HK',{timeZone:'Asia/Hong_Kong'})+'（香港時間）';const stateLabel=(s:string)=>statusNames[s]??s;
+const visible=computed(()=>manifest.value?.sources.filter(s=>!query.value||[s.label,s.edition,...(s.headers??[])].some(v=>v.includes(query.value)))??[]);
+function analysed(id:string){return analytics.value?.entries.filter(r=>r.source_id===id&&r.analysis_status==='ANALYZED').length??0;}
+const notices=computed(()=>{const groups=new Map<string,{id:string;url:string;checked:string;hash:string;count:number;events:Notice[]}>();for(const e of events.value){const g=groups.get(e.source_url)??{id:e.source_id??new URL(e.source_url).hostname,url:e.source_url,checked:e.checked_at,hash:e.evidence_sha256,count:0,events:[]};g.events.push(e);g.count++;groups.set(e.source_url,g);}return [...groups.values()];});
+onMounted(async()=>{try{const m=await readJSON<HubManifest>('/catalog-manifest.json');manifest.value=m;const [a,e,i]=await Promise.all([readJSON<AnalyticsData>('/data/'+m.data_id+'/analytics.json'),readJSON<Notice[]>('/data/'+m.data_id+'/events.json'),insightManifest(m.data_id)]);analytics.value=a;events.value=e;insights.value=i;extraCounts.value=await readJSON('/insights/'+i.analysis_id+'/topic-counts.json');}catch(e){error.value=String(e);}});
+</script>
+<style scoped>
+.source-totals{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:24px 0}.source-totals>div{background:#e7efeb;border-radius:12px;padding:20px}.source-totals strong{display:block;font-size:32px}.source-search{margin-top:30px}.field-chips{display:flex;flex-wrap:wrap;gap:8px}.field-chips span{padding:5px 9px;border:1px solid #ccdcd5;border-radius:5px;font-size:13px}.source-card{scroll-margin-top:20px}.notice-source{border-bottom:1px solid #e0e8eb;padding:10px 0}.source-hub .actions{gap:18px}.source-hub td{overflow-wrap:anywhere}@media(max-width:650px){.source-totals{grid-template-columns:repeat(2,1fr)}.source-hub h1{font-size:27px}}
+</style>
