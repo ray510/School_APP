@@ -1,0 +1,54 @@
+name: Complete official capacity capture
+on:
+  push:
+    branches: [release/full-catalog]
+    paths: [.github/workflows/official-eight-capacity.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          artifact-ids: '10586218474'
+          run-id: '35449129731'
+          github-token: ${{ github.token }}
+          path: captured
+          merge-multiple: true
+      - name: Stream only the documented missing public XML without credentials
+        run: |
+          python - <<'PY'
+          import urllib.request,json,pathlib,hashlib,datetime
+          root=pathlib.Path('captured');report=json.loads((root/'capture.json').read_text())
+          source=next(s for s in report if s['code']=='A02');entry=next(r for r in source['resources'] if r['role']=='capacity')
+          if entry['state']!='BLOCKED':raise ValueError('Expected only missing oversized capacity resource')
+          metadata=json.loads((root/'A02.json').read_text())['result'];resource=next(r for r in metadata['resources'] if r['id']==entry['resource_id'])
+          url='https://applications.edb.gov.hk/datagovhk/data/SchoolAccommodation.xml'
+          if resource['url'].replace('http:','https:',1)!=url:raise ValueError('Capacity URL mismatch')
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self,*args,**kwargs):raise ValueError('Unexpected redirect')
+          path=root/'raw'/(entry['resource_id']+'.xml');h=hashlib.sha256();total=0
+          with urllib.request.build_opener(NoRedirect()).open(urllib.request.Request(url,headers={'User-Agent':'HK-School-Guide-Public-Data/1.0','Accept-Encoding':'identity'}),timeout=90) as response:
+            with path.open('wb') as out:
+              while True:
+                b=response.read(1024*1024)
+                if not b:break
+                total+=len(b)
+                if total>350000000:raise ValueError('Capacity stream exceeds reviewed 350MB bound')
+                out.write(b);h.update(b)
+              status=response.status
+          entry.update(state='FETCHED_NOT_VALIDATED',evidence={'url':url,'final_url':url,'file':str(path.relative_to(root)),'sha256':h.hexdigest(),'bytes':total,'fetched_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'http_status':status})
+          entry.pop('error',None)
+          (root/'capture.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf8')
+          print(json.dumps({'capacity_bytes':total,'sha256':h.hexdigest(),'raw_resources':sum(len(s['resources']) for s in report),'errors':sum(r['state']!='FETCHED_NOT_VALIDATED' for s in report for r in s['resources'])}))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: official-eight-full-raw
+          path: captured
+          retention-days: 90
