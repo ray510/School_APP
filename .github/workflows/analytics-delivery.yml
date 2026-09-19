@@ -1,5 +1,5 @@
 name: Classification and evidence analytics
-# Read-only source snapshot for the missing annual-profile regression reported by the user.
+# Read-only source baseline for sitewide evidence search and the source transparency hub.
 on:
   push:
     branches: [release/full-catalog]
