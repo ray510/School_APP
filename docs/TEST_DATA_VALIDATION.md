@@ -15,6 +15,7 @@
 - Worker：`hk-school-guide-test`，Version `43a5f920-d599-4fe0-a966-19f54e58003f`，只綁 Custom Domain `schools-test.finpulsx.win`。
 - 線上 HTTPS 驗收（憑證有效）：health `staging / database=ok / data_status=published`；`/`、`/schools?level=PRIMARY`、`/schools/:id`、`/compare`、`/shortlist`、`/sources` 深層網址 200；三學段搜尋與名稱關鍵字、詳情、比較（跨學段回 400）均取得真實資料且 `is_test=false`；`/source-reference` 三份原文 962／507／441 筆、欄位 104／118／103，記錄標示 `UNLINKED_SOURCE_RECORD`；`/api/v1/events` 0 筆、`verified_events_only`；`/api/not-found` 回 JSON 404；`robots.txt` `Disallow: /`、`X-Robots-Tag: noindex, nofollow`、CSP `connect-src 'self'`。
 - 私人筆記：前端只發出 GET `/api/v1/*`，收藏／備註存於瀏覽器 IndexedDB；CSP 禁止連往其他來源。
+- 線上瀏覽器驗收（獨立 runner、唯讀）：run [35420584196](https://github.com/ray510/HK_APP/actions/runs/35420584196)，HTTP 檢查通過，Playwright desktop＋mobile Chromium **2 passed**（列表勾選→比較表、年度原文頁→原文欄位），artifact `school-live-acceptance`（id 10577152463，含截圖）。
 
 上一輪 run [35369033994](https://github.com/ray510/HK_APP/actions/runs/35369033994) 的 deploy job `105682164673` 在建立 D1 並套用 001 後，於 002 失敗（`incomplete input: SQLITE_ERROR [code: 7500]`）；根因與修法見 [TEST_SITE_DEPLOYMENT.md](TEST_SITE_DEPLOYMENT.md)「Migration 與 D1 遠端 splitter」。
 
