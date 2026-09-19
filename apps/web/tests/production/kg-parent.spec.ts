@@ -9,6 +9,6 @@ test('KG parent needs to evidence comparison without raw status controls',async(
 test('parent application steps, class hours and private notes',async({page,request})=>{
  const m:KGManifest=await(await request.get('/kg-parent-manifest.json')).json();const rows:KGSummary[]=await(await request.get('/kg-parent/'+m.bundle_id+'/index.json')).json();const s=rows.find(r=>r.name==='大埔循道衛理幼稚園')!;
  const calls:string[]=[];page.on('request',r=>calls.push(r.url()+(r.postData()??'')));
- await page.goto('/kindergarten/'+s.id+'?year=2027');await expect(page.getByText('遞交方法：親臨／郵寄至本幼稚園遞交',{exact:true})).toBeVisible();await expect(page.getByText('全日班：09:00–16:30（2025/26）',{exact:false}).first()).toBeVisible();await page.getByRole('button',{name:'加入我的清單'}).click();await expect(page.getByRole('status')).toHaveText('已儲存於此瀏覽器。');
+ await page.goto('/kindergarten/'+s.id+'?year=2027');await expect(page.locator('li').filter({hasText:'遞交方法：親臨／郵寄至本幼稚園遞交'})).toBeVisible();await expect(page.getByText('全日班：09:00–16:30（2025/26）',{exact:false}).first()).toBeVisible();await page.getByRole('button',{name:'加入我的清單'}).click();await expect(page.getByRole('status')).toHaveText('已儲存於此瀏覽器。');
  await page.goto('/kindergarten/plan');const secret='parent-private-'+Date.now();await page.getByLabel('查詢回覆及私人筆記').fill(secret);await page.getByRole('button',{name:'儲存進度及筆記'}).click();await expect(page.getByRole('status')).toHaveText('已儲存於此瀏覽器。');await page.reload();await expect(page.getByLabel('查詢回覆及私人筆記')).toHaveValue(secret);expect(calls.some(x=>x.includes(secret))).toBe(false);
 });

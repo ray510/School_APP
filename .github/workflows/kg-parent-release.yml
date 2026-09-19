@@ -4,6 +4,12 @@ on:
     branches: [release/full-catalog]
     paths: [.github/workflows/kg-parent-release.yml, "apps/web/src/full/kg/**", "scripts/kg_parent/**", "scripts/kg-parent*", "tests/kg_parent/**", "tests/unit/kg-parent.test.ts", "apps/web/tests/production/kg-parent.spec.ts"]
   workflow_dispatch:
+    inputs:
+      inference_mode:
+        description: Reuse the verified identical-input results or explicitly run fresh inference
+        type: choice
+        options: [reuse, fresh]
+        default: reuse
 permissions:
   contents: read
   actions: read
@@ -49,7 +55,19 @@ jobs:
           path: artifacts/kg-parent-cache
           key: kg-parent-evidence-v1-${{ runner.os }}-${{ github.run_id }}
           restore-keys: kg-parent-evidence-v1-${{ runner.os }}-
+      - uses: actions/download-artifact@v4
+        if: github.event.inputs.inference_mode != 'fresh'
+        with:
+          artifact-ids: '10587409572'
+          run-id: '35454325243'
+          github-token: ${{ github.token }}
+          path: reused-kg
+          merge-multiple: true
+      - name: Reuse exact input-verified completed model analysis without new calls
+        if: github.event.inputs.inference_mode != 'fresh'
+        run: python scripts/kg-parent-reuse.py
       - name: Bounded Jev evidence selection for kindergarten only
+        if: github.event.inputs.inference_mode == 'fresh'
         env:
           TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
           JEV_PROVIDER: typesafe
@@ -131,6 +149,7 @@ jobs:
             artifacts/kg-parent/backup-result.json
             artifacts/kg-parent/verification.json
             artifacts/kg-parent/inference.json
+            artifacts/kg-parent/inference-reuse.json
             artifacts/production/deployment-result.json
             apps/web/test-results-production
           retention-days: 90
