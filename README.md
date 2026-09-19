@@ -1,91 +1,81 @@
 # 香港選校年鑑 HK_APP
 
-香港幼稚園、小學及中學的年度選校工具。Vue 3 + TypeScript + Hono + Cloudflare Workers Static Assets + D1。
+**正式站已上線：https://schools.finpulsx.win**
 
-**目前交付：已上線並完成線上驗收的北區三學段試點。** 包含 30 個已配對的學校／校址年度資料項目、15 項有來源證據及適用條件的招生事件，以及比較、私人清單與 ICS 流程。這不是全港資料已核實或 production 正式上線。
+全港學校名錄與三學段年度概覽，按選定官方資源版本完整收錄。沒有北區或30間學校抽樣限制；每個來源的所有原始行及欄位均可讀取。
 
-測試站：<https://schools-test.finpulsx.win>
+## 已驗收正式版本
 
-建議入口：<https://schools-test.finpulsx.win/schools?level=PRIMARY&year=2027&has_annual=1>
+- 程式 commit：`de43efa6da11f0dd3660525626b05fd41647ec09`。
+- 分支：`release/full-catalog`。
+- [Full official catalog production release — run35426733829](https://github.com/ray510/HK_APP/actions/runs/35426733829)：prepare及publish成功。
+- `LIVE_VERIFIED`：2026-09-19T06:32:24.233Z（香港時間14:32:24）；其後正式域名桌面／手機瀏覽器驗收成功。
+- 完整驗收、來源版本、backup及限制：[PRODUCTION_LIVE_ACCEPTANCE.md](docs/PRODUCTION_LIVE_ACCEPTANCE.md)。
 
-## 最新驗收
+後續文件commit不等於重新部署程式；main尚未自動合併。
 
-- 已部署程式 commit：`cee3fc3f06560e98a8d2e4fdd7b7398ca879753c`。
-- 最後測試修正：`b29ea6d10b4d479bf545aa54f64335cc90aed4ad`；等待 IndexedDB 儲存完成才導航／刷新，保留持久化及不傳送筆記的斷言。
-- [Reviewed school pilot delivery — run 35425446270](https://github.com/ray510/HK_APP/actions/runs/35425446270)：prepare / deploy **success**。
-- `LIVE_VERIFIED`：`2026-09-19T06:03:52.290Z`；其後線上 desktop / mobile Chromium **4 passed**。
-- 完整證據、資料限制、備份與恢復邊界：[docs/PILOT_LIVE_ACCEPTANCE.md](docs/PILOT_LIVE_ACCEPTANCE.md)。
+## 全量資料覆蓋
 
-本次 70 項 Node 回歸、111 項 Vitest、13 項 Python SQLite publication 測試、本機及線上各 4 項 Chromium 流程通過。執行環境是 GitHub Actions Ubuntu / Node 24，沒有宣稱在使用者 Windows 或 production 驗收。
+| 來源 | 原始／收錄 | 原始欄位 | 排除 |
+|---|---:|---:|---:|
+| 教育局學校位置及資料 | 3496／3496 | 33 | 0 |
+| 幼稚園概覽2025/26繁中 | 962／962 | 104 | 0 |
+| 小學概覽2025繁中 | 507／507 | 118 | 0 |
+| 中學概覽2025/2026繁中 | 441／441 | 103 | 0 |
 
-工作分支：`fix/phase1-stabilization`；[Draft PR #1](https://github.com/ray510/HK_APP/pull/1)。本輪未合併 main。後續文件 commit 不等於已部署程式版本。
+本次重新下載時間：2026-09-19T06:30Z。共5406筆來源紀錄；不是5406間獨立學校。重複校號、不同班別與特殊學校紀錄全部保留。原始名錄的3496筆可在完整名錄搜尋，全部1910筆年度概覽可在年度概覽入口搜尋。
 
-## 已實作功能
+同名同址同學段作顯示分組，不代表已認證canonical identity；地址不同的年度原文不被丟棄，而是保留獨立入口及同名相關連結。
 
-| 功能 | 範圍 |
-|---|---|
-| 學校搜尋及詳情 | 三學段、入學學年、校名、來源地區及資助類別；固定 release 分頁 |
-| 試點年度資料 | 北區各學段 10 個配對項目；年度摘要、原文、識別及來源證據 |
-| 最多四校比較 | 同學段比較；年度資料保留來源版本、所屬時期及未知狀態 |
-| 私人清單 | IndexedDB 本機儲存、筆記、進度、JSON 備份及匯入衝突預覽、跨分頁 revision 檢查 |
-| 招生日曆 | 15 項已發佈、有證據及適用條件的事件；date-only 與確切時間分開、ICS 匯出 |
-| 私人事件 | 只存瀏覽器，與官方公告分開；隨私人 JSON 備份匯出 |
-| 資料流程 | 原始 hash、來源審閱、immutable 版本、CAS 發佈及 audit；相同資料重播不重複發佈 |
-| 部署保護 | 測試主機與既有 D1 限定、寫入前備份、帳戶額度檢查、noindex、無 HTTP 管理寫入 |
+來源完整性、學校身份認證與當屆公告覆蓋分開說明。原始CSV全量不等於每個PDF全文、所有歷年／語言副本或所有學校最新招生公告均已結構化。小學概覽2026網上版已發布，但本次CKAN最新具名CSV為2025；網站保留真實版本並連往官方最新網上版。
 
-基本名錄仍為 partial；原始來源紀錄不等於去重後獨立學校數。未納入試點的年度原文繼續獨立展示。15 項事件包含共同或有條件程序，並非每間學校都有個別招生公告。試點配對屬 assistant-assisted source review，`human_review=false`，不是官方認證。
+## 使用入口
 
-學校名錄不是招生資格或錄取概率。未知欄位不由去年日期或虛構數字填補。歷史概覽不因選擇 2027 入學而成為 2027 已確認收費。CSV 文字不當 HTML 執行，學校自述不轉成平台排名。
+- [全港名錄](https://schools.finpulsx.win/schools)
+- [全部年度概覽](https://schools.finpulsx.win/schools?collection=annual)
+- [來源及逐項覆蓋](https://schools.finpulsx.win/sources)
+- [全量資料ZIP](https://schools.finpulsx.win/downloads/school-data.zip)
 
-## 本機開始使用
+功能包括校名／校號／地址搜尋、地區與辦學類別篩選、同學段2–4校比較、完整原文欄位搜尋、私人清單及進度、備份匯出／確認匯入，以及有來源的招生日期和ICS。
 
-需要 Node 24.x、pnpm 10.28.0。以下 PowerShell 指令只操作本機。切換分支前先保存未提交修改，不要使用 reset --hard。
+已有15项經來源核對的招生事件，並非全港每校所有招生事件。未公布或未核實日期不推算，舊年度費用不因選新入學學年而重新標記。學校自述不當平台排名或錄取概率。
 
-```powershell
-git fetch origin
-git switch fix/phase1-stabilization
-git pull --ff-only
-corepack enable
-corepack prepare pnpm@10.28.0 --activate
-pnpm install --frozen-lockfile
-pnpm build:web
-pnpm db:migrate:local
-pnpm fixture:local
-# 以下為純本機示範，不是真實學校
-pnpm school demo --environment local
-pnpm dev:worker
+## 正式版架構
+
+Vue3／TypeScript＋版本化Cloudflare Workers Static Assets＋read-only Worker。公開資料在瀏覽器搜尋、每個資料組JSON按需讀取。正式版不依賴試點D1、不綁D1／KV／R2、不做資料庫全量寫入，亦沒有開啟排程或更改付費方案。
+
+資料包在發布前保存為本repo的GitHub Release資產，不再只依賴會到期的CI artifact。來源公開資料可由正式站下載；私人筆記不會包含其中。
+
+私人清單只在IndexedDB保存，含revision衝突保護及寫入完成確認。沒有雲端同步、不收集兒童身份證明、不安裝流量追蹤。正式域名與測試域名的私人儲存互相獨立，沒有自動搬移。
+
+## 更新與驗收
+
+正式入口：`.github/workflows/production-release.yml`。
+
+prepare必須完成四來源抓取、typecheck/lint/tests、全量逐行逐欄核對、真正本機workerd及桌面／手機驗收。publish先做repo release封存，再核對目標域名及Worker所有權，部署後核對HTTPS、版本與線上瀏覽器。
+
+Token僅由GitHub Secrets注入部署step；不要貼到對話、PR、檔案或前端。正式域名唯一允許 `schools.finpulsx.win`；衝突即停止，不接管其他站點。
+
+開發環境：Node24.x、pnpm10.28.0。主要程式：
+
+```text
+apps/web/src/full/                正式前端
+apps/web/vite.production.config.ts
+apps/worker/src/production.ts     read-only公開Worker
+scripts/full-catalog-build.py     不抽樣的來源整合
+scripts/full-catalog-verify.py    原始行／欄獨立核對
+scripts/production-archive.mjs    版本化資料封存
+scripts/production-deploy.mjs     僅正式子網域的發布
 ```
 
-瀏覽 `http://127.0.0.1:8787`。另一終端的 `pnpm dev:web` 使用 5173，API 轉送本機 8787。若 8787 已被其他程序佔用，先確認程序用途，不要擅自結束其他服務。
+70項Node回歸、111項Vitest、4項本機production瀏覽器流程及線上瀏覽器steps已通過。未聲稱在使用者Windows實機驗收。更多指令及安全邊界見[PRODUCTION_FULL_CATALOG.md](docs/PRODUCTION_FULL_CATALOG.md)。
 
-## 測試
+## 舊測試系統保留
 
-```powershell
-pnpm typecheck
-pnpm lint
-pnpm test
-pnpm exec tsx tests/integration/prepare.ts
-python tests/integration/publication.py
-pnpm build:web
-pnpm build:worker
-```
+`schools-test.finpulsx.win`及既有測試D1保持原狀；其30間配對試點、CAS／audit、SQL migration與測試文件屬獨立歷史部署，不應拿來限制正式全量讀取。
 
-`build:worker` 是 dry-run，不上傳。`pnpm test` 不包含 Python 或瀏覽器測試；完整 CI 會另行執行。試點 Playwright 需要正確的真實試點資料；一般本機 demo 不能代替。
+- [PILOT_LIVE_ACCEPTANCE.md](docs/PILOT_LIVE_ACCEPTANCE.md)：舊試點驗收。
+- [TEST_SITE_DEPLOYMENT.md](docs/TEST_SITE_DEPLOYMENT.md)：既有D1測試部署。
+- [ANNUAL_DATA_OPERATIONS.md](docs/ANNUAL_DATA_OPERATIONS.md)：原審核與D1工具。
 
-## 更新測試站
-
-本輪使用 `.github/workflows/pilot-delivery.yml` 和 `scripts/pilot-deploy.mjs`。只更新 `schools-test.finpulsx.win`、既有 `hk-school-guide-test` 與已核對的 D1；沒有新建資料庫。實際遠端 ledger 為 001–005。
-
-API Token 只由 GitHub staging secret 注入部署步驟，不要提交或貼出 Token。必須保留 prepare 成功門檻、審核及帳戶額度檢查。新資料發佈前仍需更新對應來源審閱與版本，不要靠略過 release 衝突強行更新。
-
-一般 `pnpm school` import/publish 工具仍有其 local-only 限制；不要將專用、已授權 staging updater 與未完成的通用 production importer 混為一談。
-
-基礎名錄部署與資料包重用方式：[docs/TEST_SITE_DEPLOYMENT.md](docs/TEST_SITE_DEPLOYMENT.md)。年度資料操作：[docs/ANNUAL_DATA_OPERATIONS.md](docs/ANNUAL_DATA_OPERATIONS.md)。較早狀態文件僅代表其所標日期及 commit；本輪現況以 [docs/PILOT_LIVE_ACCEPTANCE.md](docs/PILOT_LIVE_ACCEPTANCE.md) 為準。
-
-## 備份及未完成的正式營運門檻
-
-本次 `reviewed-pilot-package` 及 `reviewed-pilot-live-evidence` artifact 保留至 2026-12-18；後者包含寫入前 `before.sql`、hash、版本記錄及線上截圖。此為有期限的備份，不是永久封存。不可直接將備份 SQL 覆蓋匯入現有非空資料庫。
-
-正式營運仍須擴展資料配對與當屆公告覆核、持久備份、production 權限、安全及成本評估；本輪沒有修改主站、其他子網域、production、cron 或付款方案。
-
-私人筆記及申請進度只存家長瀏覽器，沒有伺服器同步；請避免填寫兒童身份證明、成績或其他敏感資料，並自行定期匯出備份。
+不要以刪除原有身份核實或資料發佈保護的方式宣稱全量已核實。正式站透過完整來源展示提供資料；沒有偽造人工審核、教育局背書或未公布數據。
