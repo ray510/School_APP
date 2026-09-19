@@ -1,0 +1,40 @@
+name: School pilot delivery checks
+on:
+  push:
+    branches: [fix/phase1-stabilization]
+    paths:
+      - '.github/workflows/pilot-delivery-checks.yml'
+      - 'data/pilot/**'
+      - 'scripts/pilot-*'
+      - 'apps/web/src/**'
+      - 'packages/contracts/src/pilot*'
+      - 'tests/pilot/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: school-pilot-checks
+  cancel-in-progress: false
+jobs:
+  baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Retain tracked source for reproducible review (no environment or credentials)
+        run: git archive --format=tar.gz --output=hk-app-source.tar.gz HEAD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: school-pilot-source
+          path: hk-app-source.tar.gz
+          retention-days: 7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: corepack enable && corepack prepare pnpm@10.28.0 --activate
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck && pnpm lint && pnpm test
