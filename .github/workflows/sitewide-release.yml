@@ -1,5 +1,5 @@
 name: Sitewide JEV analysis and data sources release
-# Full-source transparency, source-backed search and four new bounded JEV themes.
+# Full-source transparency; keep valid public inference caches even when a later UI gate fails.
 on:
   push:
     branches: [release/full-catalog]
@@ -35,15 +35,21 @@ jobs:
           github-token: ${{ github.token }}
           path: reused
           merge-multiple: true
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
         with:
           path: artifacts/sitewide-cache
-          key: sitewide-jev-v1-${{ runner.os }}-${{ github.run_id }}
+          key: sitewide-jev-v1-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: sitewide-jev-v1-${{ runner.os }}-
       - name: Four additional JEV themes on all annual source records
         env:
           TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
         run: python scripts/jev_sitewide.py
+      - name: Preserve validated public model responses without keys or notes
+        if: always() && hashFiles('artifacts/sitewide-cache/*.json') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: artifacts/sitewide-cache
+          key: sitewide-jev-v1-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Build source hub, evidence search and all-school projections
         run: |
           pnpm --filter @hk-school/web exec vite build --config vite.production.config.ts
