@@ -2,7 +2,7 @@ name: Kindergarten parent-first production release
 on:
   push:
     branches: [release/full-catalog]
-    paths: [.github/workflows/kg-parent-release.yml]
+    paths: [.github/workflows/kg-parent-release.yml, "apps/web/src/full/kg/**", "scripts/kg_parent/**", "scripts/kg-parent*", "tests/kg_parent/**", "tests/unit/kg-parent.test.ts", "apps/web/tests/production/kg-parent.spec.ts"]
   workflow_dispatch:
 permissions:
   contents: read
