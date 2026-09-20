@@ -64,10 +64,12 @@ jobs:
           path: reused-kg
           merge-multiple: true
       - name: Reuse exact input-verified completed model analysis without new calls
+        id: reuse_inference
         if: github.event.inputs.inference_mode != 'fresh'
+        continue-on-error: true
         run: python scripts/kg-parent-reuse.py
       - name: Bounded Jev evidence selection for kindergarten only
-        if: github.event.inputs.inference_mode == 'fresh'
+        if: github.event.inputs.inference_mode == 'fresh' || steps.reuse_inference.outcome == 'failure'
         env:
           TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
           JEV_PROVIDER: typesafe
