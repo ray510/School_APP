@@ -30,5 +30,5 @@ test('the exact three reported directory URLs provide useful annual comparisons 
  await page.getByRole('button',{name:'全日照顧與接送',exact:true}).click();
  await page.screenshot({path:test.info().outputPath('reported-three-school-comparison.png'),fullPage:true});
  await page.reload();await expect(page.getByTestId('comparison-coverage')).toContainText('3 項取得');
- for(const id of ids){await page.goto('/schools/'+id+'?year=2027');await expect(page.getByRole('heading',{name:'已接通同校址年度概覽'})).toBeVisible();await expect(page.getByRole('heading',{name:'幼稚園營辦性質：非牟利'})).toBeVisible();await expect(page.getByRole('heading',{name:'幼稚園教育計劃：參加幼稚園教育計劃'})).toBeVisible();await expect(page.locator('summary').filter({hasText:'104 個欄位'})).toBeVisible();}
+ for(const id of ids){await page.goto('/schools/'+id+'?year=2027');await expect(page.getByRole('heading',{name:'已按來源證據接通年度概覽'})).toBeVisible();await expect(page.getByRole('heading',{name:'幼稚園營辦性質：非牟利'})).toBeVisible();await expect(page.getByRole('heading',{name:'幼稚園教育計劃：參加幼稚園教育計劃'})).toBeVisible();await expect(page.locator('summary').filter({hasText:'104 個欄位'})).toBeVisible();}
 });
