@@ -32,7 +32,8 @@ def prepare():
   fees={'status':'NO_CERTIFICATE','rows':[]}
   if d and p:
    try:
-    fees=certificate(d['text'],fields['學校名稱'],fields.get('地址',''))
+    school_number_match=bool(code) and d['id']=='fee-'+code
+    fees=certificate(d['text'],fields['學校名稱'],fields.get('地址',''),school_number_match=school_number_match)
     if fees['status']=='IDENTITY_REVIEW' and s.get('profile_resolution',{}).get('links'):
      fees=certificate(d['text'],fields['學校名稱'],s['address'])
      if fees['rows']:fees['identity_address_basis']='EXISTING_CORROBORATED_DIRECTORY_CAMPUS_ADDRESS'
