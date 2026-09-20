@@ -12,7 +12,7 @@
    <section><h3>② 要畀幾多錢</h3><template v-if="calculation.subtotal!==null"><strong class="kg-total">{{ money(calculation.subtotal) }}</strong><p>本版已知學費及膳食小計／年（{{ grade }} {{ sessions[session] }}）</p>
      <p v-for="r in calculation.rows" :key="r.category">{{ r.category==='meal'?'膳食':'學費' }}：{{ money(r.cents) }} × {{ r.periods }} 期 = {{ money(r.annual_cents) }}</p>
      <p v-if="budget>0">{{ calculation.subtotal>budget*100?'這個版本的已知小計已高於你的全年預算。':'已知小計在你設定的預算內，但其他支出及目標學年價目未齊，不能判定總成本符合預算。' }}</p>
-     <p class="kg-caution">只適用符合政府資助資格的情況；註冊費未重複相加。未計校車、用品及延長照顧，並非完整全年總額。</p>
+     <p class="kg-caution">{{ feeBasisNote }}</p>
     </template><p v-else>此班別未有通過身份、版面及算式核對的收費數字；可先查核准收費文件。</p>
     <p>{{ feePeriod(school.fees.effective_from,year) }}</p><a v-if="school.fees.archived_url" :href="school.fees.archived_url" target="_blank" rel="noopener noreferrer">查看本次核對的收費證明書</a>
     <details v-if="school.supplies.length"><summary>用品及其他支出：逐項查看，不自動當成必付</summary><p v-for="f in school.supplies" :key="f.field">{{ f.field }}：{{ f.state==='UNKNOWN'?'未列明':display(f.value) }}<small>{{ f.edition }}；選購性質、期數及當屆價格未確認。</small></p></details>
@@ -33,5 +33,5 @@
 <script setup lang="ts">
 import {computed} from 'vue';import {RouterLink} from 'vue-router';import {safeLink,display} from '../catalog';import {money,costs,feePeriod,sessions,topics as topicNames,noteStatus,vacancyText,sessionMeaning,careMatch,type KGSchool} from './model';
 const props=defineProps<{school:KGSchool;year:number;grade:string;session:string;pickup:string;budget:number;focus:string}>();defineEmits<{save:[school:KGSchool];questions:[school:KGSchool]}>();
-const calculation=computed(()=>costs(props.school.fees.rows,props.grade,props.session));const selection=computed(()=>props.school.parent_analysis.selections[props.focus]);const telephone=computed(()=>props.school.phone?.replace(/[^\d+]/g,''));const link=computed(()=>({path:'/kindergarten/'+props.school.id,query:{year:String(props.year),grade:props.grade,session:props.session}}));const fallbackQuestion=computed(()=>({learning:'請學校舉例說明每日遊戲、語文及探究活動如何安排。',settling:'請學校說明新生適應期、家長陪同及遇到適應困難時的支援。',admission:'請學校確認當屆截止日期、所需文件及申請入口。',care:'請學校確認正常放學、最遲接走及延長照顧費。'}[props.focus]??'請向學校確認目標學年實際安排。'));
+const calculation=computed(()=>costs(props.school.fees.rows,props.grade,props.session));const selection=computed(()=>props.school.parent_analysis.selections[props.focus]);const feeBasisNote=computed(()=>props.school.fees.basis==='AFTER_GOVERNMENT_SUBSIDY_IF_ELIGIBLE'?'此列為收費證明書所示扣減政府資助後金額；家庭／幼兒是否符合資格須另確認。註冊費未重複相加，未計校車、用品及延長照顧，並非完整全年總額。':props.school.fees.basis==='APPROVED_FEES_CERTIFICATE'?'此列直接按教育局收費證明書計算，沒有假設政府資助。註冊費未重複相加，未計校車、用品及延長照顧，並非完整全年總額。':'收費基準仍待核對；未計校車、用品及延長照顧，並非完整全年總額。');const telephone=computed(()=>props.school.phone?.replace(/[^\d+]/g,''));const link=computed(()=>({path:'/kindergarten/'+props.school.id,query:{year:String(props.year),grade:props.grade,session:props.session}}));const fallbackQuestion=computed(()=>({learning:'請學校舉例說明每日遊戲、語文及探究活動如何安排。',settling:'請學校說明新生適應期、家長陪同及遇到適應困難時的支援。',admission:'請學校確認當屆截止日期、所需文件及申請入口。',care:'請學校確認正常放學、最遲接走及延長照顧費。'}[props.focus]??'請向學校確認目標學年實際安排。'));
 </script>
