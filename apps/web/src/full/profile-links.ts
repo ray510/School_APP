@@ -7,13 +7,26 @@ export interface ProfileProof {
   school_number:string; location_id:string; method:string; checks:string[];
   directory_address:string; profile_address:string; address_differs:boolean;
 }
+export interface ProfileCandidate {
+  source_id:string; edition:string; row:number; record_sha256:string; from_school_id:string;
+  checks:string[]; directory_name:string; directory_address:string; profile_name:string; profile_address:string;
+}
 export interface ProfileResolution {
-  version:'source-identity-view-v1'; links:ProfileProof[]; warnings:string[];
+  version:'source-identity-view-v2'; links:ProfileProof[]; candidates:ProfileCandidate[]; warnings:string[];
   session_evidence:Array<{school_id:string;row:number;record_sha256:string;session:string}>;
 }
+export type IdentityState='SOURCE_GROUP'|'EVIDENCE_LINKED'|'REVIEW_REQUIRED'|'NO_CANDIDATE'|'DIRECTORY_ONLY';
+export interface IdentityIndexEntry {state:IdentityState;linked_ids:string[];candidate_ids:string[]}
+export interface IdentityAuditLevel {annual_only_rows:number;evidence_linked_rows:number;review_required_rows:number;no_candidate_rows:number}
+export interface IdentityAudit extends IdentityAuditLevel {policy_version:'source-identity-view-v2';by_level:Record<string,IdentityAuditLevel>}
+export interface IdentityMap {entries:Record<string,IdentityIndexEntry>;audit:IdentityAudit}
+export interface IdentityManifest {schema:1;data_id:string;identity_id:string;policy_version:'source-identity-view-v2';generated_at:string;display_groups:number;audit:IdentityAudit}
 export const identityText=(value:string):string=>value.normalize('NFKC').toUpperCase().replace(/\s+/g,'').trim();
-const addressText=(value:string):string=>identityText(value).replace(/[，,。.;；]/g,'');
+const addressDigits:Record<string,string>={零:'0',〇:'0',一:'1',二:'2',三:'3',四:'4',五:'5',六:'6',七:'7',八:'8',九:'9'};
+const addressText=(value:string):string=>identityText(value).replace(/[零〇一二三四五六七八九]/g,v=>addressDigits[v]).replace(/[，,。.;；]/g,'');
 const phone=(value:string|undefined):string=>String(value??'').replace(/[^0-9]/g,'');
+const website=(value:string|undefined):string=>String(value??'').trim().toLowerCase().replace(/^https?:\/\//,'').replace(/^www\./,'').replace(/\/$/,'');
+const districtText=(value:string|undefined):string=>identityText(value??'').replace(/^(?:香港|九龍|新界)/,'');
 export function directoryKey(row:Directory):string|null {
   const value=row.fields['SCHOOL NO.']??row.source_key;
   return /^\d{12}$/.test(value)?value.slice(0,10):null;
@@ -26,22 +39,75 @@ function sharedContact(row:Directory,a:Annual):string[] {
   return [['電話',row.fields['聯絡電話']??row.fields.TELEPHONE,a.fields['電話']??a.fields['學校電話']],['傳真',row.fields['傳真號碼']??row.fields['FAX NUMBER'],a.fields['傳真']??a.fields['學校傳真']]]
     .filter(([,left,right])=>phone(left).length===8&&phone(left)===phone(right)).map(([label])=>label+'一致');
 }
+function sharedWebsite(row:Directory,a:Annual):boolean {
+  const left=website(row.fields['網址']??row.fields.WEBSITE),right=website(a.fields['學校網址']);return Boolean(left&&right&&left===right);
+}
+interface MatchEvidence {key:string|null;name:string;addr:string;sameName:boolean;sameAddress:boolean;sameDistrict:boolean;row:Directory;checks:string[]}
+function matchEvidence(base:School,donor:School,a:Annual):MatchEvidence[] {
+  if(base.level!==donor.level||!base.directory.length)return [];
+  const key=annualKey(a),name=a.fields['學校名稱']??donor.name,addr=a.fields['地址']??a.fields['學校地址']??donor.address;
+  const sameName=identityText(base.name)===identityText(name),sameAddress=addressText(base.address)===addressText(addr);
+  const profileDistrict=a.fields['地區']??a.fields['區域']??donor.district;
+  return base.directory.map(row=>{
+    const contacts=sharedContact(row,a),sameWebsite=sharedWebsite(row,a),sameDistrict=Boolean(districtText(base.district)&&districtText(base.district)===districtText(profileDistrict));
+    const checks=[...(base.level==='KG'&&key!==null&&directoryKey(row)===key?['學校編號一致','校址編號一致']:[]),...(sameName?['校名正規化一致']:[]),...(sameAddress?['地址正規化一致']:[]),...contacts,...(sameWebsite?['網址一致']:[]),...(sameDistrict?['地區一致']:[])];
+    return {key,name,addr,sameName,sameAddress,sameDistrict,row,checks};
+  });
+}
 export function profileProof(base:School,donor:School,a:Annual):ProfileProof|null {
-  if(base.level!==donor.level||identityText(base.name)!==identityText(a.fields['學校名稱']??donor.name)||!base.directory.length)return null;
-  const key=annualKey(a),addr=a.fields['地址']??a.fields['學校地址']??donor.address;
-  // KG sources have a shared school + campus identifier. Never use a school name alone.
-  const rows=base.directory.filter(d=>base.level==='KG'?key!==null&&directoryKey(d)===key:addressText(base.address)===addressText(addr));
-  for(const d of rows){
-    const checks=sharedContact(d,a),sameAddress=addressText(base.address)===addressText(addr);
-    if(!sameAddress&&!checks.length)continue;
-    if(base.level!=='KG'&&!checks.length)continue;
+  for(const evidence of matchEvidence(base,donor,a)){
+    const keyMatch=evidence.checks.includes('學校編號一致')&&evidence.checks.includes('校址編號一致');
+    const contact=evidence.checks.includes('電話一致')||evidence.checks.includes('傳真一致'),sameWebsite=evidence.checks.includes('網址一致');
+    const linked=base.level==='KG'
+      ? keyMatch&&evidence.sameName&&(evidence.sameAddress||contact||sameWebsite)
+      : evidence.sameName&&((evidence.sameAddress&&(contact||sameWebsite))||(contact&&sameWebsite&&evidence.sameDistrict));
+    if(!linked)continue;
     return {source_id:a.source_id,edition:a.edition,row:a.row,record_sha256:a.record_sha256,from_school_id:donor.id,
-      school_number:key?.slice(0,6)??'',location_id:key?.slice(6)??'',
-      method:base.level==='KG'?'SCHOOL_CAMPUS_NAME_AND_CORROBORATION':'NORMALIZED_NAME_ADDRESS_AND_CONTACT',
-      checks:[...(base.level==='KG'?['學校編號一致','校址編號一致']:[]),'校名正規化一致',...(sameAddress?['地址正規化一致']:[]),...checks],
-      directory_address:base.address,profile_address:addr,address_differs:!sameAddress};
+      school_number:evidence.key?.slice(0,6)??'',location_id:evidence.key?.slice(6)??'',
+      method:base.level==='KG'?'SCHOOL_CAMPUS_NAME_AND_CORROBORATION':evidence.sameAddress?'NORMALIZED_NAME_ADDRESS_AND_CONTACT':'NORMALIZED_NAME_CONTACT_WEBSITE_AND_DISTRICT',
+      checks:evidence.checks,directory_address:base.address,profile_address:evidence.addr,address_differs:!evidence.sameAddress};
   }
   return null;
+}
+export function profileCandidate(base:School,donor:School,a:Annual):ProfileCandidate|null {
+  if(profileProof(base,donor,a))return null;
+  for(const evidence of matchEvidence(base,donor,a)){
+    const keyMatch=evidence.checks.includes('學校編號一致')&&evidence.checks.includes('校址編號一致');
+    const contact=evidence.checks.includes('電話一致')||evidence.checks.includes('傳真一致'),sameWebsite=evidence.checks.includes('網址一致');
+    const review=base.level==='KG'?keyMatch:evidence.sameName||evidence.sameAddress&&(contact||sameWebsite)||contact&&sameWebsite&&evidence.sameDistrict;
+    if(!review)continue;
+    return {source_id:a.source_id,edition:a.edition,row:a.row,record_sha256:a.record_sha256,from_school_id:donor.id,checks:evidence.checks,
+      directory_name:base.name,directory_address:base.address,profile_name:evidence.name,profile_address:evidence.addr};
+  }
+  return null;
+}
+const emptyEntry=():IdentityIndexEntry=>({state:'DIRECTORY_ONLY',linked_ids:[],candidate_ids:[]});
+export function buildIdentityMap(records:School[]):IdentityMap {
+  const entries=Object.fromEntries(records.map(r=>[r.id,emptyEntry()]));
+  const dirs=records.filter(r=>r.directory.length),linkedRows=new Set<string>(),reviewRows=new Set<string>(),noCandidateRows=new Set<string>();
+  const levels:Record<string,IdentityAuditLevel>={};
+  const rowKey=(a:Annual)=>a.source_id+':'+a.edition+':'+a.row+':'+a.record_sha256;
+  // ponytail: ~3.6k display groups keep this full evidence scan simple; index signals if the catalog grows materially.
+  for(const donor of records.filter(r=>r.annual.length&&!r.directory.length))for(const a of donor.annual){
+    const sameLevel=dirs.filter(base=>base.level===donor.level);let linked=sameLevel.filter(base=>profileProof(base,donor,a));
+    if(donor.level!=='KG'){const sameAddress=linked.filter(base=>!profileProof(base,donor,a)!.address_differs);if(sameAddress.length)linked=sameAddress;}
+    const candidates=linked.length?[]:sameLevel.filter(base=>profileCandidate(base,donor,a));
+    const key=rowKey(a),level=levels[donor.level]??={annual_only_rows:0,evidence_linked_rows:0,review_required_rows:0,no_candidate_rows:0};levels[donor.level]=level;level.annual_only_rows++;
+    if(linked.length){linkedRows.add(key);level.evidence_linked_rows++;entries[donor.id].linked_ids.push(...linked.map(x=>x.id));for(const base of linked)entries[base.id].linked_ids.push(donor.id);}
+    else if(candidates.length){reviewRows.add(key);level.review_required_rows++;entries[donor.id].candidate_ids.push(...candidates.map(x=>x.id));for(const base of candidates)entries[base.id].candidate_ids.push(donor.id);}
+    else{noCandidateRows.add(key);level.no_candidate_rows++;}
+  }
+  for(const record of records){const entry=entries[record.id];entry.linked_ids=[...new Set(entry.linked_ids)].sort();entry.candidate_ids=[...new Set(entry.candidate_ids)].sort();entry.state=record.directory.length&&record.annual.length?'SOURCE_GROUP':entry.linked_ids.length?'EVIDENCE_LINKED':entry.candidate_ids.length?'REVIEW_REQUIRED':record.annual.length?'NO_CANDIDATE':'DIRECTORY_ONLY';}
+  const audit:IdentityAudit={policy_version:'source-identity-view-v2',annual_only_rows:linkedRows.size+reviewRows.size+noCandidateRows.size,evidence_linked_rows:linkedRows.size,review_required_rows:reviewRows.size,no_candidate_rows:noCandidateRows.size,by_level:levels};
+  if(audit.annual_only_rows!==Object.values(levels).reduce((n,v)=>n+v.annual_only_rows,0)||audit.annual_only_rows!==audit.evidence_linked_rows+audit.review_required_rows+audit.no_candidate_rows)throw new Error('Identity audit partition mismatch');
+  return {entries,audit};
+}
+export async function loadIdentityIndex(dataId:string):Promise<{manifest:IdentityManifest;rows:Summary[]}> {
+  const manifest=await readJSON<IdentityManifest>('/identity-manifest.json');
+  if(manifest.schema!==1||manifest.data_id!==dataId||manifest.policy_version!=='source-identity-view-v2'||manifest.audit.policy_version!==manifest.policy_version||!/^([a-f0-9]){64}$/.test(manifest.identity_id)||manifest.audit.annual_only_rows!==manifest.audit.evidence_linked_rows+manifest.audit.review_required_rows+manifest.audit.no_candidate_rows)throw new Error('身份索引與原始資料版本不一致。');
+  const rows=await readJSON<Summary[]>('/identity/'+manifest.identity_id+'/index.json');
+  if(rows.length!==manifest.display_groups||rows.some(row=>!row.identity))throw new Error('身份索引不完整。');
+  return {manifest,rows};
 }
 function kgDimension(profiles:Annual[],sources:Source[],field:string,map:Record<string,[string,string]>):Dimension {
   const evidence:ClassificationEvidence[]=profiles.filter(a=>a.source_id==='edb-kg-profiles').map(a=>{
@@ -55,11 +121,11 @@ function kgDimension(profiles:Annual[],sources:Source[],field:string,map:Record<
 }
 export function resolveProfiles(base:School,candidates:School[],sources:Source[]):School {
   const out:School={...base,annual:[...base.annual],semantic_annotations:[...(base.semantic_annotations??[])],sessions:[...base.sessions],classification:{...base.classification}};
-  const resolution:ProfileResolution={version:'source-identity-view-v1',links:[],warnings:[],session_evidence:[]};
+  const resolution:ProfileResolution={version:'source-identity-view-v2',links:[],candidates:[],warnings:[],session_evidence:[]};
   const groups=new Map<string,Array<{donor:School;a:Annual;proof:ProfileProof}>>();
   for(const donor of candidates){for(const a of donor.annual){
     if(out.annual.some(p=>p.source_id===a.source_id&&p.edition===a.edition))continue;
-    const proof=profileProof(base,donor,a);if(!proof)continue;
+    const proof=profileProof(base,donor,a);if(!proof){const candidate=profileCandidate(base,donor,a);if(candidate&&!resolution.candidates.some(x=>x.record_sha256===candidate.record_sha256&&x.from_school_id===candidate.from_school_id))resolution.candidates.push(candidate);continue;}
     const cohort=JSON.stringify([a.source_id,a.edition]);const list=groups.get(cohort)??[];
     if(!list.some(x=>x.a.record_sha256===a.record_sha256&&x.a.row===a.row)){list.push({donor,a,proof});groups.set(cohort,list);}
   }}
@@ -92,8 +158,9 @@ export async function loadSchoolDetails(m:Manifest,id:string,index?:Summary[]):P
   if(base.id!==id||!Array.isArray(base.annual)||!Array.isArray(base.directory))throw new Error('學校來源紀錄不一致。');
   if(!base.directory.length)return base;
   const rows=index??await readJSON<Summary[]>(prefix+'/index.json');
-  const ids=rows.filter(s=>s.id!==id&&s.level===base.level&&identityText(s.name)===identityText(base.name)&&(s.annual_rows>0||base.level==='KG')).map(s=>s.id);
-  if(ids.length>16)return {...base,profile_resolution:{version:'source-identity-view-v1',links:[],warnings:['同名候選過多，需要人工核對。'],session_evidence:[]}};
+  const summary=rows.find(s=>s.id===id),mapped=[...(summary?.identity?.linked_ids??[]),...(summary?.identity?.candidate_ids??[])];
+  const ids=(mapped.length?mapped:rows.filter(s=>s.id!==id&&s.level===base.level&&identityText(s.name)===identityText(base.name)&&(s.annual_rows>0||base.level==='KG')).map(s=>s.id)).filter((candidate,i,all)=>candidate!==id&&all.indexOf(candidate)===i);
+  if(ids.length>24)return {...base,profile_resolution:{version:'source-identity-view-v2',links:[],candidates:[],warnings:['身份候選過多，需要人工核對。'],session_evidence:[]}};
   const candidates=await Promise.all(ids.map(async candidate=>{
     if(!/^school_[a-f0-9]{24}$/.test(candidate))throw new Error('候選資料識別不正確。');
     const value=await readJSON<School>(prefix+'/schools/'+candidate+'.json');if(value.id!==candidate)throw new Error('候選來源紀錄不一致。');return value;

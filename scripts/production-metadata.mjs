@@ -19,7 +19,11 @@ writeFileSync(resolve(dist,'_headers'),`/*
   Cache-Control: public, max-age=31536000, immutable
 /insights/*
   Cache-Control: public, max-age=31536000, immutable
+/identity/*
+  Cache-Control: public, max-age=31536000, immutable
 /insights-manifest.json
+  Cache-Control: no-cache, no-transform
+/identity-manifest.json
   Cache-Control: no-cache, no-transform
 /catalog-manifest.json
   Cache-Control: no-cache
