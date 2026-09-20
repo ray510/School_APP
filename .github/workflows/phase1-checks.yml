@@ -18,6 +18,7 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: '24'
+          package-manager-cache: false
       - run: node scripts/run-regressions.mjs
   local-acceptance:
     needs: regression
@@ -32,6 +33,7 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: '24'
+          package-manager-cache: false
       - run: corepack enable && corepack prepare pnpm@10.28.0 --activate
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
