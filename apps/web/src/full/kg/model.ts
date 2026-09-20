@@ -38,6 +38,20 @@ export function selectedIds(ids:string[],index:KGSummary[]):KGSummary[]{
  const unique=[...new Map(result.map(s=>[s!.id,s!])).values()];
  if(unique.length!==ids.length)throw new Error('兩個網址指向同一份已核對校址資料，請選另一間幼稚園。');return unique;
 }
+export type ParentReadinessState='CONFIRMED'|'REFERENCE_ONLY'|'TO_CONFIRM';
+export interface ParentReadinessItem {state:ParentReadinessState;label:string;detail:string}
+export interface ParentReadiness {admission:ParentReadinessItem;fees:ParentReadinessItem;care:ParentReadinessItem}
+export const readinessLabel:Record<ParentReadinessState,string>={CONFIRMED:'有同學年資料',REFERENCE_ONLY:'只有參考資料',TO_CONFIRM:'仍要向學校確認'};
+export function parentReadiness(s:KGSchool,grade:string,session:string,year:number):ParentReadiness {
+ const steps=s.application_steps?.filter(e=>e.year===year&&e.grade===grade)??[];const events=s.events.filter(e=>e.entry_year===year);
+ const admission:ParentReadinessItem=steps.length||events.length?{state:'CONFIRMED',label:readinessLabel.CONFIRMED,detail:'已找到本校適用學年的公開申請步驟或公告。'}:s.admissions.some(f=>f.state!=='UNKNOWN')?{state:'REFERENCE_ONLY',label:readinessLabel.REFERENCE_ONLY,detail:'只有概覽或舊版申請資料，不能當作當屆截止日。'}:{state:'TO_CONFIRM',label:readinessLabel.TO_CONFIRM,detail:'未找到本校目標學年的具體申請資料。'};
+ const calc=costs(s.fees.rows,grade,session);const feeYear=s.fees.effective_from?Number(s.fees.effective_from.slice(0,4)):null;
+ const fees:ParentReadinessItem=calc.subtotal!==null&&feeYear===year?{state:'CONFIRMED',label:readinessLabel.CONFIRMED,detail:'有同學年可計算收費文件；仍未必包括校車、用品及延長照顧。'}:calc.subtotal!==null?{state:'REFERENCE_ONLY',label:readinessLabel.REFERENCE_ONLY,detail:'有可計算收費，但不是目標學年已確認報價。'}:{state:'TO_CONFIRM',label:readinessLabel.TO_CONFIRM,detail:'未有通過核對的本班別收費小計。'};
+ const exact=s.hours.filter(h=>h.session===session&&h.year===year);const reference=s.hours.filter(h=>h.session===session);const careFacts=s.care.some(f=>f.state!=='UNKNOWN');
+ const care:ParentReadinessItem=exact.length===1?{state:'CONFIRMED',label:readinessLabel.CONFIRMED,detail:'有同學年正常上課時間；最遲接走及延長照顧仍須看校方規則。'}:reference.length||careFacts?{state:'REFERENCE_ONLY',label:readinessLabel.REFERENCE_ONLY,detail:'只有其他學年／未註明學年的時間或概覽照顧資料。'}:{state:'TO_CONFIRM',label:readinessLabel.TO_CONFIRM,detail:'未有足夠資料確認正常放學或延長照顧。'};
+ return {admission,fees,care};
+}
+
 export function careMatch(s:KGSchool,session:string,pickup:string,year:number):string {
  if(!pickup)return '先確認正常放學及最遲接走時間；辦公時間不是照顧時間。';
  const h=s.hours.filter(h=>h.session===session&&h.year===year);
