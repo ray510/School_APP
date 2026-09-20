@@ -1,4 +1,20 @@
-# Implementation status — 2026-09-18
+# Implementation status — 2026-09-20
+
+## 2026-09-20 身份可發現性本機交付（尚未上線）
+
+分支 `codex/identity-discovery` 以 `release/full-catalog` 的 `c9010629b3c47c3782edcab7f16d6c97a74d4674` 為基底，新增不改寫原始紀錄的 `source-identity-view-v2`。以正式站 `data_id=64a7e4fc199f3d4f028c7d08523bff5f20a327af3fb8ebe34382f0d4c069be9f` 的下載資料本機重建，1,260 筆沒有完全相同名址分組的年度紀錄分流如下：
+
+| 狀態 | 筆數 | 公開行為 |
+|---|---:|---|
+| `EVIDENCE_LINKED` | 1,165 | 依校址編號，或校名、聯絡、網址、地區及地址證據建立顯示關聯；原始 ID 不合併 |
+| `REVIEW_REQUIRED` | 67 | 顯示候選，不能當成人工批准身份 |
+| `NO_CANDIDATE` | 28 | 保留完整原文，仍可直接搜尋及開啟 |
+
+本機驗收：Node `24.19.0`、pnpm `10.28.0`；`pnpm typecheck`、`pnpm lint`、70 個 regression、176 個 Vitest、production Vite build、實際本機 workerd health，以及 desktop/mobile Playwright 身份搜尋 journey 全部 PASS。輸入 catalog 在全量 audit 前後 byte-equivalent；身份 projection 有獨立 manifest、hash、分流總數閘門，並由共用 production metadata build step 產生。
+
+分支已推送並建立 PR；`LIVE_NOT_RUN`：沒有 Cloudflare production deploy 或遠端資料寫入。以上不等於 1,260 筆已逐校人工核准；67 筆候選及 28 筆無候選仍是明確的後續覆核範圍。
+
+## 2026-09-18 stabilization baseline
 
 ## 已提交及驗證的範圍
 
