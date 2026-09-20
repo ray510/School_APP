@@ -14,3 +14,9 @@ test('parent application steps, class hours and private notes',async({page,reque
  await page.goto('/kindergarten/'+s.id+'?year=2027');await expect(page.locator('li').filter({hasText:'遞交方法：親臨／郵寄至本幼稚園遞交'})).toBeVisible();await expect(page.getByText('全日班：09:00–16:30（2025/26）',{exact:false}).first()).toBeVisible();await page.getByRole('button',{name:'加入我的清單'}).click();await expect(page.getByRole('status')).toHaveText('已儲存於此瀏覽器。');
  await page.goto('/kindergarten/plan');const secret='parent-private-'+Date.now();await page.getByLabel('查詢回覆及私人筆記').fill(secret);await page.getByRole('button',{name:'儲存進度及筆記'}).click();await expect(page.getByRole('status')).toHaveText('已儲存於此瀏覽器。');await page.reload();await expect(page.getByLabel('查詢回覆及私人筆記')).toHaveValue(secret);expect(calls.some(x=>x.includes(secret))).toBe(false);
 });
+test('responsive kindergarten shell stays viewport-safe and touch-sized',async({page},testInfo)=>{
+ await page.goto('/');const viewport=await page.evaluate(()=>({client:document.documentElement.clientWidth,scroll:document.documentElement.scrollWidth}));expect(viewport.scroll).toBeLessThanOrEqual(viewport.client);
+ if(testInfo.project.name!=='mobile')return;
+ const nav=page.getByRole('navigation',{name:'家長版主要導覽'});expect(await nav.locator('a').evaluateAll(links=>links.every(link=>link.getBoundingClientRect().height>=44))).toBe(true);expect((await nav.boundingBox())?.height).toBeLessThanOrEqual(48);
+ await expect(page.getByRole('navigation',{name:'資料捷徑'}).locator('a:visible')).toHaveCount(5);expect((await page.getByRole('button',{name:'按需要更新'}).boundingBox())?.width).toBeGreaterThan(280);
+});
