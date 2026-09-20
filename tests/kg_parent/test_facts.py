@@ -11,6 +11,12 @@ class Fees(unittest.TestCase):
  def test_name_not_enough(self):self.assertEqual(certificate(text(),'乙幼稚園','香港某街1號')['status'],'IDENTITY_REVIEW')
  def test_arithmetic_fail_closed(self):self.assertEqual(certificate(text(total='1200.00'),'甲幼稚園','香港某街1號')['status'],'ARITHMETIC_REVIEW')
  def test_unknown_layout(self):self.assertEqual(certificate(text().replace('FEES AFTER DEDUCTION OF GOVERNMENT','FEES BEFORE DEDUCTION'),'甲幼稚園','香港某街1號')['status'],'LAYOUT_REVIEW')
+ def test_standard_approved_certificate_without_subsidy_banner(self):
+  t=text().replace('FEES AFTER DEDUCTION OF GOVERNMENT SUBSIDY','FEES CERTIFICATE Tuition Fee Inclusive Fee')
+  r=certificate(t,'甲幼稚園','香港某街1號');self.assertEqual(r['status'],'PARSED_NOT_HUMAN_REVIEWED');self.assertEqual(r['basis'],'APPROVED_FEES_CERTIFICATE')
+ def test_school_number_can_corroborate_multi_premises_but_not_wrong_name(self):
+  r=certificate(text(),'甲幼稚園','另一校址',school_number_match=True);self.assertEqual(r['identity_basis'],'EDB_SCHOOL_NUMBER_AND_NAME')
+  self.assertEqual(certificate(text(),'乙幼稚園','另一校址',school_number_match=True)['status'],'IDENTITY_REVIEW')
  def test_multiple_dates_not_latest_guessed(self):self.assertEqual(certificate(text()+'With effect from : 01.09.2025','甲幼稚園','香港某街1號')['status'],'DATE_REVIEW')
  def test_period_bound(self):self.assertEqual(certificate(text(periods=13,total='1300.00'),'甲幼稚園','香港某街1號')['status'],'ARITHMETIC_REVIEW')
  def test_duplicate_rows_rejected(self):self.assertEqual(certificate(text().replace('With effect','NURSERY WHOLE-DAY\n100.00 - 11/- 1100.00\nWith effect'),'甲幼稚園','香港某街1號')['status'],'LAYOUT_REVIEW')
