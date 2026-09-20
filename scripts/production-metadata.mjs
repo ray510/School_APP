@@ -1,7 +1,8 @@
-import {readFileSync,writeFileSync} from 'node:fs';import {resolve} from 'node:path';import {execFileSync} from 'node:child_process';
+import {readFileSync,writeFileSync} from 'node:fs';import {resolve} from 'node:path';import {execFileSync} from 'node:child_process';import {createRequire} from 'node:module';
 const root=process.cwd(),dist=resolve(root,'apps/web/dist-production');
 const m=JSON.parse(readFileSync(resolve(dist,'catalog-manifest.json')));
 if(m.environment!=='production'||m.coverage_status!=='COMPLETE_SELECTED_OFFICIAL_RESOURCES'||m.sources.some(s=>s.rows!==s.published_rows||s.excluded_rows!==0))throw new Error('Full resource reconciliation required');
+execFileSync(process.execPath,[createRequire(import.meta.url).resolve('tsx/cli'),resolve(root,'scripts/build-identity.ts')],{cwd:root,stdio:'inherit'});
 const git=execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim();
 writeFileSync(resolve(dist,'build-info.json'),JSON.stringify({owner:'ray510/HK_APP',environment:'production',git_sha:git,data_id:m.data_id,built_at:new Date().toISOString(),storage:'versioned-static-assets',private_storage:'browser-indexeddb'},null,2));
 writeFileSync(resolve(dist,'robots.txt'),'User-agent: *\nAllow: /\nDisallow: /api/\n');

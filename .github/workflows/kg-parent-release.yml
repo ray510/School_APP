@@ -48,7 +48,6 @@ jobs:
         run: |
           pnpm --filter @hk-school/web exec vite build --config vite.production.config.ts
           python scripts/kg-parent-restore.py
-          pnpm exec tsx scripts/build-identity.ts
           pnpm exec tsx scripts/kg-parent-inputs.ts
           python -m scripts.kg_parent.build prepare
       - uses: actions/cache@v4

@@ -102,9 +102,9 @@ export function buildIdentityMap(records:School[]):IdentityMap {
   if(audit.annual_only_rows!==Object.values(levels).reduce((n,v)=>n+v.annual_only_rows,0)||audit.annual_only_rows!==audit.evidence_linked_rows+audit.review_required_rows+audit.no_candidate_rows)throw new Error('Identity audit partition mismatch');
   return {entries,audit};
 }
-export async function loadIdentityIndex(dataId:string):Promise<{manifest:IdentityManifest;rows:Summary[]}> {
+export async function loadIdentityIndex(dataId:string,annualOnlyRows:number):Promise<{manifest:IdentityManifest;rows:Summary[]}> {
   const manifest=await readJSON<IdentityManifest>('/identity-manifest.json');
-  if(manifest.schema!==1||manifest.data_id!==dataId||manifest.policy_version!=='source-identity-view-v2'||manifest.audit.policy_version!==manifest.policy_version||!/^([a-f0-9]){64}$/.test(manifest.identity_id)||manifest.audit.annual_only_rows!==manifest.audit.evidence_linked_rows+manifest.audit.review_required_rows+manifest.audit.no_candidate_rows)throw new Error('身份索引與原始資料版本不一致。');
+  if(manifest.schema!==1||manifest.data_id!==dataId||manifest.policy_version!=='source-identity-view-v2'||manifest.audit.policy_version!==manifest.policy_version||!/^([a-f0-9]){64}$/.test(manifest.identity_id)||manifest.audit.annual_only_rows!==annualOnlyRows||manifest.audit.annual_only_rows!==manifest.audit.evidence_linked_rows+manifest.audit.review_required_rows+manifest.audit.no_candidate_rows)throw new Error('身份索引與原始資料版本不一致。');
   const rows=await readJSON<Summary[]>('/identity/'+manifest.identity_id+'/index.json');
   if(rows.length!==manifest.display_groups||rows.some(row=>!row.identity))throw new Error('身份索引不完整。');
   return {manifest,rows};

@@ -11,6 +11,15 @@ const index:Summary[]=JSON.parse(readFileSync(prefix+'/index.json','utf8'));
 const records=index.map(row=>JSON.parse(readFileSync(prefix+'/schools/'+row.id+'.json','utf8')) as School);
 const {entries,audit}=buildIdentityMap(records);
 const byId=new Map(records.map(record=>[record.id,record]));
+if(byId.size!==records.length||audit.annual_only_rows!==manifest.stats.unassociated_annual_rows)throw new Error('Identity source coverage mismatch');
+for(const record of records){
+  const entry=entries[record.id];
+  if(!entry)throw new Error('Missing identity entry '+record.id);
+  const linked=new Set(entry.linked_ids),candidates=new Set(entry.candidate_ids);
+  if(linked.size!==entry.linked_ids.length||candidates.size!==entry.candidate_ids.length||[...linked].some(id=>candidates.has(id))||(record.annual.length>0&&!record.directory.length&&record.annual.length!==1))throw new Error('Invalid identity entry '+record.id);
+  for(const id of linked){const related=byId.get(id);if(!related||id===record.id||related.level!==record.level||!entries[id]?.linked_ids.includes(record.id))throw new Error('Invalid linked identity '+record.id);}
+  for(const id of candidates){const related=byId.get(id);if(!related||id===record.id||related.level!==record.level||!entries[id]?.candidate_ids.includes(record.id))throw new Error('Invalid identity candidate '+record.id);}
+}
 const projection=index.map(row=>{
   const identity=entries[row.id];
   const aliases=identity.linked_ids.flatMap(id=>{

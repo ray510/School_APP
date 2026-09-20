@@ -4,7 +4,7 @@ import type {Annotation} from './analytics';
 export type Level='KG'|'PRIMARY'|'SECONDARY'|'SPECIAL'|'OTHER';
 export const levels:Record<Level,string>={KG:'幼稚園',PRIMARY:'小學',SECONDARY:'中學',SPECIAL:'特殊學校',OTHER:'其他'};
 export interface Source {id:string;label:string;edition:string;catalog_url:string;url:string;fetched_at:string;sha256:string;rows:number;columns:number;published_rows:number;excluded_rows:number;coverage:number}
-export interface Manifest {data_id:string;environment:string;coverage_status:string;generated_at:string;sources:Source[];stats:{source_record_count:number;display_groups:number;directory_display_groups:number;annual_rows:number;by_level:Record<string,number>};event_count:number;version_note:string;sample_limit:null;synthetic_records:number}
+export interface Manifest {data_id:string;environment:string;coverage_status:string;generated_at:string;sources:Source[];stats:{source_record_count:number;display_groups:number;directory_display_groups:number;annual_rows:number;unassociated_annual_rows:number;by_level:Record<string,number>};event_count:number;version_note:string;sample_limit:null;synthetic_records:number}
 export interface Summary {classification:Classification;id:string;name:string;english_name:string;address:string;district:string;level:Level;funding:string;category:string;sessions:string[];association:string;directory_rows:number;annual_rows:number;source_ids:string[];school_numbers:string[];identity?:IdentityIndexEntry;search_aliases?:string[]}
 export interface Directory {row:number;source_key:string;fields:Record<string,string>;record_sha256:string}
 export interface Annual {source_id:string;edition:string;row:number;fields:Record<string,string>;record_sha256:string}

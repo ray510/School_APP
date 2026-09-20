@@ -10,9 +10,9 @@
 | `REVIEW_REQUIRED` | 67 | 顯示候選，不能當成人工批准身份 |
 | `NO_CANDIDATE` | 28 | 保留完整原文，仍可直接搜尋及開啟 |
 
-本機驗收：Node `24.19.0`、pnpm `10.28.0`；`pnpm typecheck`、`pnpm lint`、70 個 regression、175 個 Vitest、production Vite build、實際本機 workerd health，以及 desktop/mobile Playwright 身份搜尋 journey 全部 PASS。輸入 catalog 在全量 audit 前後 byte-equivalent；身份 projection 有獨立 manifest、hash、分流總數閘門及 release workflow build step。
+本機驗收：Node `24.19.0`、pnpm `10.28.0`；`pnpm typecheck`、`pnpm lint`、70 個 regression、176 個 Vitest、production Vite build、實際本機 workerd health，以及 desktop/mobile Playwright 身份搜尋 journey 全部 PASS。輸入 catalog 在全量 audit 前後 byte-equivalent；身份 projection 有獨立 manifest、hash、分流總數閘門，並由共用 production metadata build step 產生。
 
-`LIVE_NOT_RUN`：沒有 push、PR、Cloudflare production deploy 或遠端資料寫入。以上不等於 1,260 筆已逐校人工核准；67 筆候選及 28 筆無候選仍是明確的後續覆核範圍。
+分支已推送並建立 PR；`LIVE_NOT_RUN`：沒有 Cloudflare production deploy 或遠端資料寫入。以上不等於 1,260 筆已逐校人工核准；67 筆候選及 28 筆無候選仍是明確的後續覆核範圍。
 
 ## 2026-09-18 stabilization baseline
 
