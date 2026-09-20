@@ -2,7 +2,7 @@ import {test,expect} from '@playwright/test';
 test('search, compare and deep-link refresh',async({page})=>{
   await page.goto('/');await page.getByRole('button',{name:'開始選校'}).click();
   await expect(page.getByText('測試小學 1',{exact:true})).toBeVisible();
-  await page.getByRole('checkbox').nth(0).check();await page.getByRole('checkbox').nth(1).check();
+  const compare=page.getByRole('checkbox',{name:'選入比較'});await compare.nth(0).check();await compare.nth(1).check();
   await page.getByRole('button',{name:'比較已選 2/4 校'}).click();
   await expect(page).toHaveURL(/\/compare\?/);
   await expect(page.getByRole('table')).toBeVisible();
