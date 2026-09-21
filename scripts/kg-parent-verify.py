@@ -4,9 +4,15 @@ sys.path.insert(0,str(pathlib.Path(__file__).resolve().parents[1]))
 from scripts.kg_parent.facts import is_generic_guidance
 root=pathlib.Path('.');dist=root/'apps/web/dist-production';out=root/'artifacts/kg-parent'
 def read(p):return json.loads(p.read_text())
+def dedupe(items):
+ result=[];seen=set()
+ for item in items:
+  key=(item.get('field'),item.get('value'),item.get('url','').rstrip('/') or '/',item.get('target_year'))
+  if key not in seen:seen.add(key);result.append(item)
+ return result
 m=read(dist/'kg-parent-manifest.json');folder=dist/'kg-parent'/m['bundle_id'];idx=read(folder/'index.json');aliases=read(folder/'aliases.json');prepared=read(out/'prepared.json');source={r['id']:r for r in prepared['records']};inputs=read(out/'inputs.json');original={r['id']:r for r in inputs['records']}
 assert m['schema']==2
-assert len(aliases)==m['source_groups']==1759 and len(idx)==m['parent_cards'];assert len(source)==len(idx)
+assert len(aliases)==m['source_groups']==1759 and len(idx)==m['parent_cards']==1025;assert len(source)==len(idx)
 seen=set();quotes=0;fee_rows=0
 for entry in idx:
  s=read(folder/'schools'/(entry['id']+'.json'));o=original[s['id']]
@@ -28,7 +34,14 @@ for entry in idx:
  for selection in s['parent_analysis']['selections'].values():
   e=selection.get('evidence')
   if e:assert not is_generic_guidance(e['text'])
- sources=s.get('school_sources',{});assert sources.get('target_entry_year')==2027
+ sources=s.get('school_sources',{});assert sources.get('target_entry_year')==2027 and set(sources.get('fields',{}))=={'application','form','fees','hours'}
+ failures=sources.get('fetch_failures',[])
+ for failure in failures:
+  assert failure.get('reason_code') and failure.get('reason') and failure.get('checked_url') and failure.get('checked_at')
+ if sources.get('discovery_status')=='FETCH_FAILED':assert failures
+ if sources.get('discovery_status')=='NOT_FOUND':assert sources.get('reason_code') and sources.get('reason')
+ issue={k:failures[0][k] for k in ('reason_code','reason','checked_url','checked_at') if failures[0].get(k)} if sources.get('discovery_status')=='FETCH_FAILED' and failures else ({k:sources[k] for k in ('reason_code','reason') if sources.get(k)} if sources.get('reason_code') else None)
+ assert entry.get('school_source_issue')==issue
  source_root=(root/'captured-parent'/'school-sources').resolve();page_facts={field:[] for field in ('application','form','fees','hours')}
  for page in sources.get('pages',[]):
   path=(source_root/page['path']).resolve();text_path=(source_root/page['text_path']).resolve()
@@ -39,9 +52,10 @@ for entry in idx:
   for field,facts in page.get('facts',{}).items():
    assert field in page_facts;page_facts[field].extend(facts)
  for field in ('application','form','fees','hours'):
-  state=sources['fields'][field];assert state['status'] in {'NOT_RUN','CANDIDATE','REVIEW','FETCH_FAILED','NOT_FOUND','PUBLISHED'}
-  assert state['evidence_count']==len(page_facts[field]) and state['evidence']==page_facts[field][:20]
-  if state['status']=='CANDIDATE':assert any(e.get('target_year')==2027 for e in page_facts[field])
+  state=sources['fields'][field];assert state['status'] in {'CANDIDATE','REVIEW','FETCH_FAILED','NOT_FOUND','PUBLISHED'}
+  evidence=dedupe(page_facts[field]);target=[e for e in evidence if e.get('target_year')==2027];ordered=(target+[e for e in evidence if e.get('target_year')!=2027])[:20]
+  assert state['evidence_count']==state['total_evidence_count']==len(evidence) and state['target_evidence_count']==len(target) and state['evidence']==ordered
+  if state['status']=='CANDIDATE':assert target
   if state['status']=='PUBLISHED':assert state['review_status']=='APPROVED' and state['publication_status']=='PUBLISHED'
  for f in s['fees']['rows']:
   d=s['fees']['document'];text=(root/'captured-parent'/d['text_path']).read_text();assert text[f['evidence_start']:f['evidence_end']]==f['evidence_text'];assert f['cents']*f['periods']==f['annual_cents'];fee_rows+=1

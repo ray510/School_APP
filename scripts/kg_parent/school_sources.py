@@ -14,6 +14,7 @@ import json
 import pathlib
 import re
 import socket
+import ssl
 import subprocess
 import time
 import urllib.parse
@@ -29,7 +30,7 @@ SCHEMA = 1
 MAX_PAGES_PER_SCHOOL = 6
 MAX_DOCUMENT_BYTES = 2_000_000
 MAX_TOTAL_BYTES = 1_200_000_000
-RETRIES = 2
+RETRIES = 3
 MIN_HOST_INTERVAL_SECONDS = 0.35
 MAX_FAILURE_URL_LENGTH = 2_048
 FIELD_NAMES = ("application", "form", "fees", "hours")
@@ -42,8 +43,13 @@ FAILURE_REASON_MESSAGES = {
     "DOCUMENT_SIZE_LIMIT": "文件超過大小上限",
     "CAPTURE_BYTE_BUDGET": "擷取總容量已達上限",
     "PDF_TEXT_EXTRACTION_FAILED": "PDF 文字擷取失敗",
+    "NO_REGISTERED_SCHOOL_WEBSITE": "年度校情資料未有登記學校網址",
+    "HTTP_400": "來源回應 HTTP 400",
+    "HTTP_403": "來源拒絕自動擷取（HTTP 403）",
+    "HTTP_405": "來源不接受此讀取方式（HTTP 405）",
     "HTTP_4XX": "來源回應用戶端錯誤",
     "HTTP_5XX": "來源回應伺服器錯誤",
+    "TLS_ERROR": "來源的 HTTPS 憑證或協定無法驗證",
     "TIMEOUT": "來源連線逾時",
     "NETWORK_ERROR": "來源網絡連線失敗",
     "UNKNOWN_ERROR": "來源擷取發生未分類錯誤",
@@ -149,10 +155,21 @@ def failure_reason(exc: BaseException | str | None) -> tuple[str, str]:
     if raw in FAILURE_REASON_MESSAGES:
         return raw, FAILURE_REASON_MESSAGES[raw]
     if isinstance(exc, urllib.error.HTTPError):
-        return ("HTTP_4XX" if 400 <= exc.code < 500 else "HTTP_5XX" if exc.code >= 500 else "NETWORK_ERROR"), FAILURE_REASON_MESSAGES["HTTP_4XX" if 400 <= exc.code < 500 else "HTTP_5XX" if exc.code >= 500 else "NETWORK_ERROR"]
+        code = f"HTTP_{exc.code}" if f"HTTP_{exc.code}" in FAILURE_REASON_MESSAGES else "HTTP_4XX" if 400 <= exc.code < 500 else "HTTP_5XX" if exc.code >= 500 else "NETWORK_ERROR"
+        return code, FAILURE_REASON_MESSAGES[code]
     if isinstance(exc, (TimeoutError, socket.timeout)):
         return "TIMEOUT", FAILURE_REASON_MESSAGES["TIMEOUT"]
+    if isinstance(exc, socket.gaierror):
+        return "HOST_RESOLUTION_FAILED", FAILURE_REASON_MESSAGES["HOST_RESOLUTION_FAILED"]
+    if isinstance(exc, (ssl.SSLError, ssl.CertificateError)):
+        return "TLS_ERROR", FAILURE_REASON_MESSAGES["TLS_ERROR"]
     if isinstance(exc, urllib.error.URLError):
+        if isinstance(exc.reason, (TimeoutError, socket.timeout)):
+            return "TIMEOUT", FAILURE_REASON_MESSAGES["TIMEOUT"]
+        if isinstance(exc.reason, socket.gaierror):
+            return "HOST_RESOLUTION_FAILED", FAILURE_REASON_MESSAGES["HOST_RESOLUTION_FAILED"]
+        if isinstance(exc.reason, (ssl.SSLError, ssl.CertificateError)):
+            return "TLS_ERROR", FAILURE_REASON_MESSAGES["TLS_ERROR"]
         return "NETWORK_ERROR", FAILURE_REASON_MESSAGES["NETWORK_ERROR"]
     if isinstance(exc, subprocess.CalledProcessError):
         return "PDF_TEXT_EXTRACTION_FAILED", FAILURE_REASON_MESSAGES["PDF_TEXT_EXTRACTION_FAILED"]
@@ -196,14 +213,38 @@ def safe_https_url(value: str, base_host: str | None = None) -> str | None:
 
 
 def school_https_root(value: str) -> tuple[str | None, str | None]:
+    roots, base_host = school_https_roots(value)
+    return (roots[0] if roots else None), base_host
+
+
+def school_https_roots(value: str) -> tuple[list[str], str | None]:
+    """Return bounded HTTPS variants for the registered school website."""
     try:
         parsed = urllib.parse.urlparse(value)
+        if not parsed.hostname and "://" not in value:
+            parsed = urllib.parse.urlparse(f"https://{value.strip()}")
         base_host = parsed.hostname
     except ValueError:
-        return None, None
+        return [], None
+    if not base_host or parsed.username or parsed.password or parsed.port:
+        return [], None
     if parsed.scheme == "http":
-        value = urllib.parse.urlunparse(parsed._replace(scheme="https"))
-    return safe_https_url(value, base_host), base_host
+        parsed = parsed._replace(scheme="https")
+    if parsed.scheme != "https":
+        return [], base_host
+    alternate_host = base_host[4:] if base_host.lower().startswith("www.") else f"www.{base_host}"
+    candidates = [
+        urllib.parse.urlunparse(parsed),
+        urllib.parse.urlunparse(parsed._replace(path="/", params="", query="", fragment="")),
+        urllib.parse.urlunparse(parsed._replace(netloc=alternate_host)),
+        urllib.parse.urlunparse(parsed._replace(netloc=alternate_host, path="/", params="", query="", fragment="")),
+    ]
+    roots = []
+    for candidate in candidates:
+        safe = safe_https_url(candidate, base_host)
+        if safe and safe not in roots:
+            roots.append(safe)
+    return roots, base_host
 
 
 def require_public_host(host: str) -> None:
@@ -547,7 +588,10 @@ class Fetcher:
                     if delay > 0:
                         time.sleep(delay)
                     self.host_last_request[host] = time.monotonic()
-                    request = urllib.request.Request(safe, headers={"User-Agent": "HK-School-Guide-KG-2027-Source/1.0"})
+                    request = urllib.request.Request(safe, headers={
+                        "User-Agent": "Mozilla/5.0 (compatible; HK-School-Guide-KG-2027-Source/1.1)",
+                        "Accept": "text/html,application/xhtml+xml,application/pdf;q=0.9,*/*;q=0.8",
+                    })
                     opener = urllib.request.build_opener(SafeRedirectHandler(base_host))
                     with opener.open(request, timeout=self.timeout) as response:
                         final = safe_https_url(response.geturl(), base_host)
@@ -588,23 +632,34 @@ class Fetcher:
                     }
                 except Exception as exc:  # explicit source jobs retain failure state and continue other schools
                     last = exc
-                    if attempt < RETRIES:
-                        time.sleep(0.25 * attempt)
+                    code, _ = failure_reason(exc)
+                    if attempt < RETRIES and code in {"HOST_RESOLUTION_FAILED", "TIMEOUT", "NETWORK_ERROR", "HTTP_5XX"}:
+                        time.sleep(attempt)
+                    else:
+                        break
             return self.failed(safe, last)
 
 
 def capture_school(school: dict[str, Any], fetcher: Fetcher, target_year: int = TARGET_YEAR) -> dict[str, Any]:
     website = school.get("website", "")
-    root, base_host = school_https_root(website)
+    roots, base_host = school_https_roots(website)
     base = {**school, "target_entry_year": target_year, "checked_at": now(), "review_status": "REVIEW_REQUIRED", "publication_status": "UNPUBLISHED"}
-    if not root or not base_host:
-        return {**base, "discovery_status": "NOT_FOUND", "reason": "NO_APPROVED_HTTPS_SCHOOL_WEBSITE", "pages": [], "fetch_failures": [], "fields": field_states([], 0, target_year)}
-    first = fetcher.fetch(root, base_host)
-    pages = [first] if first.get("capture_status") == "CAPTURED" else []
-    fetch_failures = [] if pages else [failure_provenance(first)]
+    if not roots or not base_host:
+        code = "NO_REGISTERED_SCHOOL_WEBSITE" if not str(website).strip() else "UNAPPROVED_URL"
+        return {**base, "discovery_status": "NOT_FOUND", "reason_code": code, "reason": FAILURE_REASON_MESSAGES[code], "pages": [], "fetch_failures": [], "fields": field_states([], 0, target_year)}
+    pages = []
+    fetch_failures = []
+    first = None
+    for root in roots:
+        attempt = fetcher.fetch(root, base_host)
+        if attempt.get("capture_status") == "CAPTURED":
+            first = attempt
+            pages.append(attempt)
+            break
+        fetch_failures.append(failure_provenance(attempt))
     failures = len(fetch_failures)
-    if pages:
-        visited = {canonical_url(first.get("url") or root)}
+    if first:
+        visited = {canonical_url(item) for item in roots} | {canonical_url(first.get("url") or roots[0])}
         for url in first.get("discovered_links", [])[:MAX_PAGES_PER_SCHOOL - 1]:
             url = canonical_url(url)
             if url in visited:
@@ -642,6 +697,8 @@ def run(base: pathlib.Path, out: pathlib.Path, target_year: int = TARGET_YEAR, p
         "schema": SCHEMA, "target_entry_year": target_year, "scope": "ALL_KG_PARENT_CARDS",
         "school_count": len(records), "captured_school_count": sum(bool(s["pages"]) for s in records),
         "candidate_school_count": sum(s["discovery_status"] == "CANDIDATE" for s in records),
+        "fetch_failed_school_count": sum(s["discovery_status"] == "FETCH_FAILED" for s in records),
+        "not_found_school_count": sum(s["discovery_status"] == "NOT_FOUND" for s in records),
         "fetch_failure_count": failure_count,
         "fetch_failure_reason_counts": dict(sorted(reason_counts.items())),
         "checked_at": now(), "capture_status": "CAPTURED_WITH_EXPLICIT_GAPS", "schools": records,

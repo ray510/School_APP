@@ -21,8 +21,13 @@ SUPPLY_FIELDS=['冬季校服','夏季校服','書包','課本','茶點','文具'
 SOURCE_STATUSES={'NOT_RUN','CANDIDATE','REVIEW','FETCH_FAILED','NOT_FOUND','PUBLISHED'}
 SOURCE_FIELDS=('application','form','fees','hours')
 def default_school_sources():
- fields={k:{'status':'NOT_RUN','target_year':2027,'reference_year':None,'evidence_count':0,'evidence':[],'review_status':'NOT_STARTED','publication_status':'UNPUBLISHED'} for k in SOURCE_FIELDS}
- return {'schema':1,'target_entry_year':2027,'checked_at':None,'discovery_status':'NOT_RUN','identity_status':'NOT_RUN','review_status':'NOT_STARTED','publication_status':'UNPUBLISHED','pages':[],'fields':fields}
+ fields={k:{'status':'NOT_RUN','target_year':2027,'reference_year':None,'evidence_count':0,'total_evidence_count':0,'target_evidence_count':0,'evidence':[],'review_status':'NOT_STARTED','publication_status':'UNPUBLISHED'} for k in SOURCE_FIELDS}
+ return {'schema':1,'target_entry_year':2027,'checked_at':None,'discovery_status':'NOT_RUN','identity_status':'NOT_RUN','review_status':'NOT_STARTED','publication_status':'UNPUBLISHED','pages':[],'fetch_failures':[],'fields':fields}
+def school_source_issue(source):
+ failure=next(iter(source.get('fetch_failures',[])),None) if source.get('discovery_status')=='FETCH_FAILED' else None
+ if failure:return {k:failure[k] for k in ('reason_code','reason','checked_url','checked_at') if failure.get(k)}
+ if source.get('reason_code'):return {k:source[k] for k in ('reason_code','reason') if source.get(k)}
+ return None
 def load_school_sources():
  path=CAP/'school-sources'/'manifest.json'
  if not path.exists():return {}
@@ -35,6 +40,7 @@ def load_school_sources():
   if not entry.get('school_id') or entry.get('target_entry_year')!=2027 or entry.get('discovery_status') not in SOURCE_STATUSES:raise ValueError('Invalid KG school-source record')
   fields=entry.get('fields',{})
   if set(fields)!=set(SOURCE_FIELDS) or any(value.get('status') not in SOURCE_STATUSES for value in fields.values()):raise ValueError('Invalid KG school-source field state')
+  if any(value.get('status')=='NOT_RUN' for value in fields.values()):raise ValueError('KG school-source execution is incomplete')
   for page in entry.get('pages',[]):
    if page.get('capture_status')!='CAPTURED' or not re.fullmatch(r'[a-f0-9]{64}',page.get('sha256','')):raise ValueError('Invalid KG school-source provenance')
   result[entry['school_id']]=entry
@@ -178,10 +184,10 @@ def finalize():
   for step in r['application_steps']:groups[(step['year'],step['grade'])].append(step['action'])
   scopes=[{'year':year,'grade':grade,'summary':steps[0],'next_step':steps[1] if len(steps)>1 else steps[0]} for (year,grade),steps in groups.items()]
   selections=r['parent_analysis'].get('selections',{});highlight=next(({'topic':TOPICS[key][0],'text':selections[key]['evidence']['text']} for key in TOPICS if selections.get(key,{}).get('state')=='SUPPORTED' and selections[key].get('evidence')),None)
-  index.append({k:r[k] for k in ('id','aliases','name','address','district','sessions','classification')}|{'profile_available':bool(r['profile']),'fee_status':r['fees']['status'],'fee_effective_from':r['fees'].get('effective_from'),'tuition_rows':[{k:v for k,v in f.items() if not k.startswith('evidence')} for f in r['fees']['rows']],'has_school_events':bool(r['events']),'application_scopes':scopes,'school_event_years':sorted({e['entry_year'] for e in r['events']}),'parent_highlight':highlight,'parent_analysis_status':r['parent_analysis']['status'],'school_source_status':r['school_sources']['discovery_status'],'school_source_checked_at':r['school_sources'].get('checked_at'),'school_source_fields':{key:{'status':value['status'],'evidence_count':value.get('evidence_count',0)} for key,value in r['school_sources']['fields'].items()}})
+  index.append({k:r[k] for k in ('id','aliases','name','address','district','sessions','classification')}|{'profile_available':bool(r['profile']),'fee_status':r['fees']['status'],'fee_effective_from':r['fees'].get('effective_from'),'tuition_rows':[{k:v for k,v in f.items() if not k.startswith('evidence')} for f in r['fees']['rows']],'has_school_events':bool(r['events']),'application_scopes':scopes,'school_event_years':sorted({e['entry_year'] for e in r['events']}),'parent_highlight':highlight,'parent_analysis_status':r['parent_analysis']['status'],'school_source_status':r['school_sources']['discovery_status'],'school_source_checked_at':r['school_sources'].get('checked_at'),'school_source_issue':school_source_issue(r['school_sources']),'school_source_fields':{key:{'status':value['status'],'evidence_count':value.get('evidence_count',0)} for key,value in r['school_sources']['fields'].items()}})
  write(folder/'index.json',index);write(folder/'aliases.json',aliases);write(folder/'common-events.json',p['common_events']);write(folder/'school-sources.json',{r['id']:r['school_sources'] for r in p['records']})
  summary={k:v for k,v in ai.items() if k!='results'}
- manifest={'schema':INDEX_SCHEMA,'phase':'KG_ONLY','bundle_id':bundle,'base_data_id':p['base_data_id'],'analysis_id':p['analysis_id'],'official_bundle_id':p['official_bundle_id'],'source_groups':p['source_groups'],'parent_cards':len(index),'annual_profiles':962,'generated_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'fee_status_counts':p['fee_status_counts'],'public_capture':p['capture_summary'],'public_page_documents':p['page_documents'],'inference':summary,'scope':'All existing KG groups retained; document parsing and individual school-page coverage vary. No 2027 fee guarantee, rankings or private model data.','human_usability_test':'NOT_RUN','school_pages_linked':sum(bool(r['new_pages']) for r in p['records'])}
+ manifest={'schema':INDEX_SCHEMA,'phase':'KG_ONLY','bundle_id':bundle,'base_data_id':p['base_data_id'],'analysis_id':p['analysis_id'],'official_bundle_id':p['official_bundle_id'],'source_groups':p['source_groups'],'parent_cards':len(index),'annual_profiles':962,'generated_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'fee_status_counts':p['fee_status_counts'],'school_source_status_counts':dict(collections.Counter(r['school_sources']['discovery_status'] for r in p['records'])),'school_source_field_status_counts':{field:dict(collections.Counter(r['school_sources']['fields'][field]['status'] for r in p['records'])) for field in SOURCE_FIELDS},'public_capture':p['capture_summary'],'public_page_documents':p['page_documents'],'inference':summary,'scope':'All existing KG groups retained; document parsing and individual school-page coverage vary. No 2027 fee guarantee, rankings or private model data.','human_usability_test':'NOT_RUN','school_pages_linked':sum(bool(r['new_pages']) for r in p['records'])}
  write(folder/'manifest.json',manifest);write(DIST/'kg-parent-manifest.json',manifest)
  download=OUT/('school-kg-parent-'+bundle[:16]+'.zip')
  with zipfile.ZipFile(download,'w',zipfile.ZIP_DEFLATED) as z:

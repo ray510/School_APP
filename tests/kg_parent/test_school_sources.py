@@ -1,6 +1,7 @@
 import unittest
 import json
 import tempfile
+import urllib.error
 from pathlib import Path
 from unittest.mock import patch
 
@@ -12,6 +13,7 @@ from scripts.kg_parent.school_sources import (
     document_key,
     discover_links,
     extract_facts,
+    failure_reason,
     Fetcher,
     field_states,
     is_target_year,
@@ -20,6 +22,7 @@ from scripts.kg_parent.school_sources import (
     run,
     safe_https_url,
     school_https_root,
+    school_https_roots,
 )
 
 
@@ -55,6 +58,41 @@ class SchoolSources(unittest.TestCase):
             school_https_root("http://www.school.example/admission"),
             ("https://www.school.example/admission", "www.school.example"),
         )
+
+    def test_registered_school_url_has_bounded_https_root_fallbacks(self):
+        self.assertEqual(
+            school_https_roots("http://school.example/admission?lang=zh"),
+            ([
+                "https://school.example/admission?lang=zh",
+                "https://school.example/",
+                "https://www.school.example/admission?lang=zh",
+                "https://www.school.example/",
+            ], "school.example"),
+        )
+
+    def test_capture_uses_safe_root_fallback_and_keeps_failed_attempt(self):
+        class FakeFetcher:
+            def __init__(self):
+                self.calls = []
+
+            def fetch(self, url, base_host):
+                self.calls.append(url)
+                if len(self.calls) == 1:
+                    return {"url": url, "capture_status": "FETCH_FAILED", "reason_code": "HTTP_403", "checked_at": "2026-09-21T00:00:00+00:00"}
+                return {"url": url, "capture_status": "CAPTURED", "facts": {}, "discovered_links": []}
+
+        fetcher = FakeFetcher()
+        result = capture_school({"school_id": "school", "name": "甲幼稚園", "address": "甲街", "website": "https://school.example/admission"}, fetcher)
+
+        self.assertEqual(fetcher.calls, ["https://school.example/admission", "https://school.example/"])
+        self.assertEqual(result["discovery_status"], "REVIEW")
+        self.assertEqual(result["fetch_failures"][0]["reason_code"], "HTTP_403")
+
+    def test_school_without_registered_website_has_explicit_reason(self):
+        result = capture_school({"school_id": "school", "name": "甲幼稚園", "address": "甲街", "website": ""}, object())
+        self.assertEqual(result["discovery_status"], "NOT_FOUND")
+        self.assertEqual(result["reason_code"], "NO_REGISTERED_SCHOOL_WEBSITE")
+        self.assertEqual(result["reason"], "年度校情資料未有登記學校網址")
 
     def test_private_dns_result_is_rejected_before_fetch(self):
         with patch("scripts.kg_parent.school_sources.socket.getaddrinfo", return_value=[(2, 1, 6, "", ("10.0.0.1", 443))]):
@@ -206,12 +244,13 @@ class SchoolSources(unittest.TestCase):
         self.assertEqual(result["discovery_status"], "FETCH_FAILED")
         self.assertEqual(result["pages"], [])
         self.assertEqual(result["fields"]["application"]["evidence"], [])
-        self.assertEqual(result["fetch_failures"], [{
+        self.assertEqual(len(result["fetch_failures"]), 2)
+        self.assertEqual(result["fetch_failures"][0], {
             "checked_url": "https://school.example/admission?token=%5BREDACTED%5D",
             "checked_at": "2026-09-21T00:00:00+00:00",
             "reason_code": "HOST_RESOLUTION_FAILED",
             "reason": "來源主機無法解析",
-        }])
+        })
 
     def test_fetch_failure_reason_is_stable_bounded_and_redacts_query_secret(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -224,6 +263,9 @@ class SchoolSources(unittest.TestCase):
         self.assertEqual(result["reason"], "來源主機不是公開網絡位址")
         self.assertEqual(result["checked_url"], "https://school.example/admission?api_key=%5BREDACTED%5D")
         self.assertNotIn("secret", result["reason"])
+
+    def test_http_failure_keeps_specific_status(self):
+        self.assertEqual(failure_reason(urllib.error.HTTPError("https://school.example", 403, "Forbidden", {}, None)), ("HTTP_403", "來源拒絕自動擷取（HTTP 403）"))
 
     def test_manifest_aggregates_failure_reason_counts(self):
         schools = [{"school_id": f"school-{index}"} for index in range(1025)]
