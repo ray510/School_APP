@@ -17,7 +17,7 @@ test('parent application steps, class hours and private notes',async({page,reque
 });
 test('search card surfaces school-specific fee, admission and profile evidence',async({page})=>{
  await page.goto('/kindergarten?year=2027&grade=K1&session=WD&q='+encodeURIComponent('上水堂幼稚園'));const card=page.locator('.kg-search-card').filter({hasText:'上水堂幼稚園'});await expect(card).toBeVisible();
- const sourceFee=card.getByText(/校本費用：已有 \d+ 段證據候選/);if(await sourceFee.count()){await expect(card).toContainText('費用 已擷取相關資料，待核對學年或欄位');await expect(sourceFee).toBeVisible();}else{await expect(card).toContainText('收費文件版面待覆核');await expect(card).toContainText('暫未能計算 K1 全日班小計');}
+ const sourceFee=card.getByText(/校本費用：已有 \d+ 段證據候選/);if(await sourceFee.count()){await expect(card).toContainText('費用已擷取相關資料，待核對學年或欄位');await expect(sourceFee).toBeVisible();}else{await expect(card).toContainText('收費文件版面待覆核');await expect(card).toContainText('暫未能計算 K1 全日班小計');}
  await expect(card).toContainText('已核對 2027/28 K1 校方申請步驟');await expect(card).toContainText('2026年9月8日開始收表');await expect(card).not.toContainText('先查目標學年校方公告');await expect(card.getByText('適應同支援：',{exact:true})).toBeVisible();
 });
 test('responsive kindergarten shell stays viewport-safe and touch-sized',async({page},testInfo)=>{
