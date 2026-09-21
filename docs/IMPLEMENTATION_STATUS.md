@@ -16,6 +16,8 @@ builder 可選擇讀取 `captured-parent/school-sources/manifest.json`，並把�
 
 該 run 的 764 個 `NOT_FOUND` 中，701 個有年度檔登記的 `http://` 官方學校網址，63 個沒有網址。後續修正只把已登記同一 host 的 HTTP URL 升級成 HTTPS 候選，仍不會經明文 HTTP 擷取，亦繼續執行 HTTPS、DNS、redirect、host 及 bytes 安全 gate。CodeGraph 未經授權初始化，本輪按要求以 direct-file inspection 作 fallback。
 
+擴大版 source run `35567780464` 完成後，成功擷取 483 校共 1,342 頁，224 校有 2027/28 候選；報名、表格、費用、上課時間的 candidate school counts 分別為 186、224、44、9。其餘為 259 校只有非目標學年 review evidence、479 校 HTTPS fetch failed、63 校沒有網址。production run `35569738068` 的 scope、hash、facts 及 provenance verifier 全部通過，但舊 browser test 仍只接受無 source artifact 的收費 fallback，因此 32/34 journeys 通過後停止，沒有 deployment；測試後續改為分別驗證「有候選、待覆核」及「無候選、舊 fallback」兩個合法 release 模式。
+
 本分支經主代理重跑的離線驗證使用 Node `24.19.0`、pnpm `10.28.0` 及 Python `3.12.14`：`pnpm typecheck`、`pnpm lint`、70 個 regression、182 個 Vitest、24 個 Python KG tests、Python `py_compile`、source-job `--help` 及 production Vite build 均為 `PASS`。主代理 review 另修正 PDF 不再誤作 HTML link discovery、redirect／DNS 在連線前拒絕非公開位址、Big5 頁面解碼，以及 `FETCH_FAILED`／`NOT_FOUND` 不覆蓋既有已核對事件或收費狀態。local workerd／desktop-mobile Playwright 為 `NOT_RUN`：此 clean worktree 沒有 parent release 所需的 `apps/web/dist-production/kg-parent-manifest.json`、完整 base catalog 或 `artifacts/production/wrangler.production.json`；不以現行 production 站或不完整資料冒充本分支 real-data acceptance。
 
 ## 2026-09-21 幼稚園家長卡片證據修正（已上線）
