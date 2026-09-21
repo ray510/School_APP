@@ -1,24 +1,21 @@
 # Implementation status — 2026-09-21
 
-## 2026-09-21 2027/28 幼稚園逐校公告發現流程（本分支，尚未上線）
+## 2026-09-21 2027/28 幼稚園逐校來源完整執行
 
-分支 `codex/kg-2027-school-sources` 加入明確、獨立的 `kg-parent-school-sources.yml` source job；相關 source 程式合併到 `release/full-catalog` 後會自動執行，亦保留人工重跑入口。它從現有 1,025 張幼稚園家長卡建立完整 scope，逐校只在已登記官方學校網域及教育局核准 host 內，以每校最多 6 頁、單 host 串行、有限重試、文件／總 bytes 上限及 HTTPS redirect 檢查進行 discovery/capture。原始頁面及文字只作 CI artifact，不提交 Git；manifest 保存 URL、checked/captured time、target entry year、reference period、evidence excerpt、content hash、capture status、review status 及 publication status。
+PR [#16](https://github.com/ray510/HK_APP/pull/16) 及 [#17](https://github.com/ray510/HK_APP/pull/17) 已合併為 `182c96f7cd9cc6f298daa6b5cde4e1d388cc96cd` 及 `52dd9f3a5447a9812c79ae00cb7c8e5398a0736b`。流程以現有 1,025 張幼稚園家長卡為唯一 scope，逐校只在登記校網的 HTTPS 原路徑、首頁及同一 www／apex host 內作有限擷取；不略過 TLS、公開 IP、redirect、host、文件大小或總容量限制。失敗會保存 checked URL、時間及 DNS、TLS、HTTP、timeout 等 reason code；沒有網址與網絡擷取失敗分開處理。
 
-builder 可選擇讀取 `captured-parent/school-sources/manifest.json`，並把四個優先欄位（報名日期／步驟、表格 URL、校本費用、上課／班別時間）的 `CANDIDATE`、`REVIEW`、`FETCH_FAILED`、`NOT_FOUND` 或 `NOT_RUN` 狀態接通家長卡；未經人工身份、學年、欄位及內容覆核不會進入已確認 facts。JEV evidence block 亦會排除「請瀏覽學校網頁」及同類 generic guidance，原有年度概覽文字仍只在來源詳情保留。
+全量 source run [35589547469](https://github.com/ray510/HK_APP/actions/runs/35589547469) 為 `completed / success`：1,025 個 school IDs 全部唯一，488 校成功擷取、147 校有至少一項 2027/28 候選、341 校只有待核對／非目標年資料、474 校擷取失敗、63 校的年度資料沒有登記網址。四個欄位合共 `NOT_RUN=0`，所有 `CANDIDATE` 都有本地 2027/28 evidence；原始頁面只保留在 90 日 CI artifact，不提交 Git。
 
-首次合併後的 source run `35566099317` 在網絡擷取前正確停止：原始 catalog 有 1,759 個來源組，不是家長版的 1,025 張卡。後續修正重用既有 `kg-parent-inputs.ts` 身份整理結果作唯一 scope，避免另寫或猜測第二套逐校合併規則。
+| 2027/28 逐校欄位 | `CANDIDATE` | `REVIEW` | `NOT_FOUND` | `FETCH_FAILED` |
+|---|---:|---:|---:|---:|
+| 報名日期／步驟 | 143 | 140 | 268 | 474 |
+| 表格／網上表格 | 104 | 227 | 220 | 474 |
+| 校本費用 | 1 | 36 | 514 | 474 |
+| 上課／班別時間 | 0 | 27 | 524 | 474 |
 
-同次 production run `35566099254` 在 local browser gate 停止：新增逐校公告後，舊測試的泛用 `.kg-small strong` locator 同時命中「逐校公告」與「適應同支援」；desktop/mobile 各一項失敗、其餘 32/34 journeys 通過，沒有執行 deployment。修正只把 assertion 收窄至原本要驗證的「適應同支援」label。
+目標年 evidence 為報名 718 段、表格 255 段、費用 1 段、上課時間 0 段。唯一目標年費用候選是天主教露德聖母幼稚園頁面所載「半日班學費（扣減政府資助後全年收費）$1,170」，仍標記 `REVIEW_REQUIRED / UNPUBLISHED`。先前 run `35581155715` 曾把墨爾文幼稚園 open-day 活動的 `5–6:30 pm` 誤作上課時間；內容抽查發現後停止發布，收窄 class-hour 語境並加入回歸測試，新 run 的目標年上課時間候選為 0。
 
-首次注入 source artifact 的 production run `35567086128` 在 provenance verifier 停止，沒有執行 deployment：同一 URL 重抓後可能有動態內容，舊 URL-hash 檔名會覆蓋較早 capture，但 manifest 仍保留較早 SHA。後續改用完整內容 SHA 及文件類型作檔名，每個實際版本獨立保存；不放寬 byte hash 驗證。
-
-修正後的 source run `35566593301` 完成全部 1,025 張卡 scope，擷取到 165 校共 497 頁；86 校有 2027/28 候選。四個優先欄位的 candidate school counts 為報名 74、表格 86、費用 19、上課時間 4。所有結果仍是未發布的 review artifact，不能當成已確認資料；沒有 evidence 的學校仍明確保留 `REVIEW`、`FETCH_FAILED` 或 `NOT_FOUND`。
-
-該 run 的 764 個 `NOT_FOUND` 中，701 個有年度檔登記的 `http://` 官方學校網址，63 個沒有網址。後續修正只把已登記同一 host 的 HTTP URL 升級成 HTTPS 候選，仍不會經明文 HTTP 擷取，亦繼續執行 HTTPS、DNS、redirect、host 及 bytes 安全 gate。CodeGraph 未經授權初始化，本輪按要求以 direct-file inspection 作 fallback。
-
-擴大版 source run `35567780464` 完成後，成功擷取 483 校共 1,342 頁，224 校有 2027/28 候選；報名、表格、費用、上課時間的 candidate school counts 分別為 186、224、44、9。其餘為 259 校只有非目標學年 review evidence、479 校 HTTPS fetch failed、63 校沒有網址。production run `35569738068` 的 scope、hash、facts 及 provenance verifier 全部通過，但舊 browser test 仍只接受無 source artifact 的收費 fallback，因此 32/34 journeys 通過後停止，沒有 deployment；測試後續改為分別驗證「有候選、待覆核」及「無候選、舊 fallback」兩個合法 release 模式。
-
-本分支經主代理重跑的離線驗證使用 Node `24.19.0`、pnpm `10.28.0` 及 Python `3.12.14`：`pnpm typecheck`、`pnpm lint`、70 個 regression、182 個 Vitest、24 個 Python KG tests、Python `py_compile`、source-job `--help` 及 production Vite build 均為 `PASS`。主代理 review 另修正 PDF 不再誤作 HTML link discovery、redirect／DNS 在連線前拒絕非公開位址、Big5 頁面解碼，以及 `FETCH_FAILED`／`NOT_FOUND` 不覆蓋既有已核對事件或收費狀態。local workerd／desktop-mobile Playwright 為 `NOT_RUN`：此 clean worktree 沒有 parent release 所需的 `apps/web/dist-production/kg-parent-manifest.json`、完整 base catalog 或 `artifacts/production/wrangler.production.json`；不以現行 production 站或不完整資料冒充本分支 real-data acceptance。
+前端索引會顯示每校實際來源問題，例如 HTTP 403、HTTP 405、TLS、DNS、timeout 或「年度校情資料未有登記學校網址」，不再把所有學校壓成同一句「請查校方公告」。這不把未知資料變成零收費、全日班、未公布或已確認；`CANDIDATE`／`REVIEW` 仍須逐項人工身份、學年及內容覆核才可成為已發布 facts。離線驗證使用 Node `24.19.0`、pnpm `10.28.0` 及 Python `3.13.7`：`pnpm typecheck`、`pnpm lint`、70 個 regression、188 個 Vitest、39 個 Python KG tests及 `git diff --check` 均通過；production deployment 及 live browser acceptance 仍是獨立發布閘門。
 
 ## 2026-09-21 幼稚園家長卡片證據修正（已上線）
 
