@@ -18,13 +18,14 @@ from scripts.kg_parent.school_sources import TARGET_YEAR, run
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", type=pathlib.Path, default=pathlib.Path("base/apps/web/dist-production"))
+    parser.add_argument("--parent-inputs", type=pathlib.Path)
     parser.add_argument("--out", type=pathlib.Path, default=pathlib.Path("captured-parent/school-sources"))
     parser.add_argument("--target-year", type=int, default=TARGET_YEAR)
     parser.add_argument("--plan-only", action="store_true")
     args = parser.parse_args()
     if args.target_year != 2027:
         raise SystemExit("this release accepts only target year 2027; other years need a separately reviewed source cycle")
-    report = run(args.base, args.out, args.target_year, args.plan_only)
+    report = run(args.base, args.out, args.target_year, args.plan_only, args.parent_inputs)
     print({k: v for k, v in report.items() if k not in ("schools",)})
     return 0
 

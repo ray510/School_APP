@@ -283,19 +283,25 @@ def field_states(pages: list[dict[str, Any]], failures: int, target_year: int = 
     return result
 
 
-def read_base_schools(base: pathlib.Path) -> list[dict[str, Any]]:
+def read_base_schools(base: pathlib.Path, parent_inputs: pathlib.Path | None = None) -> list[dict[str, Any]]:
     manifest = json.loads((base / "catalog-manifest.json").read_text(encoding="utf8"))
-    data = base / "data" / manifest["data_id"]
-    index = json.loads((data / "index.json").read_text(encoding="utf8"))
+    if parent_inputs is not None:
+        payload = json.loads(parent_inputs.read_text(encoding="utf8"))
+        if payload.get("schema") != 1 or payload.get("data_id") != manifest["data_id"]:
+            raise ValueError("Parent-card scope differs from base catalog")
+        source = payload.get("records", [])
+    else:
+        data = base / "data" / manifest["data_id"]
+        index = json.loads((data / "index.json").read_text(encoding="utf8"))
+        source = [json.loads((data / "schools" / f"{summary['id']}.json").read_text(encoding="utf8")) for summary in index if summary.get("level") == "KG"]
     schools = []
-    for summary in sorted((s for s in index if s.get("level") == "KG"), key=lambda s: s["id"]):
-        detail = json.loads((data / "schools" / f"{summary['id']}.json").read_text(encoding="utf8"))
+    for detail in sorted(source, key=lambda s: s["id"]):
         annual = detail.get("annual", [])
         fields = annual[0].get("fields", {}) if len(annual) == 1 else {}
         schools.append({
-            "school_id": summary["id"],
-            "name": summary.get("name", ""),
-            "address": summary.get("address", ""),
+            "school_id": detail["id"],
+            "name": detail.get("name", ""),
+            "address": detail.get("address", ""),
             "website": fields.get("學校網址", ""),
         })
     return schools
@@ -391,8 +397,8 @@ def capture_school(school: dict[str, Any], fetcher: Fetcher, target_year: int = 
     return {**base, "discovery_status": discovery, "identity_status": "CANDIDATE", "pages": pages, "fields": fields}
 
 
-def run(base: pathlib.Path, out: pathlib.Path, target_year: int = TARGET_YEAR, plan_only: bool = False) -> dict[str, Any]:
-    schools = read_base_schools(base)
+def run(base: pathlib.Path, out: pathlib.Path, target_year: int = TARGET_YEAR, plan_only: bool = False, parent_inputs: pathlib.Path | None = None) -> dict[str, Any]:
+    schools = read_base_schools(base, parent_inputs)
     if len(schools) != 1025:
         raise ValueError(f"Unexpected KG scope: {len(schools)}")
     if plan_only:

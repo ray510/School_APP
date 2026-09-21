@@ -1,4 +1,7 @@
 import unittest
+import json
+import tempfile
+from pathlib import Path
 from unittest.mock import patch
 
 from scripts.kg_parent.school_sources import (
@@ -8,6 +11,7 @@ from scripts.kg_parent.school_sources import (
     extract_facts,
     field_states,
     is_target_year,
+    read_base_schools,
     require_public_host,
     safe_https_url,
 )
@@ -52,6 +56,22 @@ class SchoolSources(unittest.TestCase):
         raw = "2027/28 K1".encode()
         self.assertEqual(content_sha256(raw), content_sha256(raw))
         self.assertNotEqual(content_sha256(raw), content_sha256(b"changed"))
+
+    def test_parent_card_scope_is_used_instead_of_raw_source_groups(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            base = root / "base"
+            base.mkdir()
+            (base / "catalog-manifest.json").write_text(json.dumps({"data_id": "a" * 64}), encoding="utf8")
+            inputs = root / "inputs.json"
+            inputs.write_text(json.dumps({
+                "schema": 1,
+                "data_id": "a" * 64,
+                "records": [{"id": "school_parent", "name": "甲幼稚園", "address": "甲街", "annual": [{"fields": {"學校網址": "https://school.example/"}}]}],
+            }, ensure_ascii=False), encoding="utf8")
+            self.assertEqual(read_base_schools(base, inputs), [{
+                "school_id": "school_parent", "name": "甲幼稚園", "address": "甲街", "website": "https://school.example/",
+            }])
 
 
 if __name__ == "__main__":
