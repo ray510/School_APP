@@ -127,6 +127,8 @@ class SchoolSources(unittest.TestCase):
                 ("#tab-fee", "2027/28 申請表"),
                 ("/school-information/history", "School information"),
                 ("/student-performance", "Student performance"),
+                ("/open-day", "2027/28 K1 開放日報名表格"),
+                ("/family-game", "2027/28 親子遊戲日 https://forms.gle/event"),
                 ("/forms/k1-application-form.pdf", "K1 申請表"),
                 ("/forms/2027-2028-application-form.pdf", "K1 申請表"),
                 ("/forms/2026-2027-application-form.pdf", "2026/27 申請表"),
@@ -146,6 +148,9 @@ class SchoolSources(unittest.TestCase):
         self.assertIsNone(facts["form"][2]["target_year"])
         no_year_form = {"form": [facts["form"][0]]}
         self.assertEqual(field_states([{"facts": no_year_form}], 0)["form"]["status"], "REVIEW")
+
+        event = extract_facts("2027/28 K1 招生\n開放日 報名表格：", "https://school.example/")
+        self.assertEqual(event.get("form", []), [])
 
     def test_submission_and_office_times_are_application_evidence_not_class_hours(self):
         facts = extract_facts(
@@ -177,8 +182,13 @@ class SchoolSources(unittest.TestCase):
             "註冊費 $1,570\n"
             "回郵信封及 $2.4 郵票\n"
             "其他費用 $100\n"
+            "幼兒班課本 (上學期) $33.6\n"
+            "幼兒班學習教材、簿冊、美勞用品 (上學期) $595.5\n"
             "學費 HK$10,000\n"
-            "膳食 HK$800",
+            "上午班：每月學費 $0\n"
+            "膳食 HK$800\n"
+            "全日班：每月學費 $1,432\n"
+            "每月膳費 $550",
             "https://school.example/admission",
         )
 
@@ -188,6 +198,20 @@ class SchoolSources(unittest.TestCase):
             {"application", "registration", "postage"},
         )
         self.assertNotIn("其他費用 $100", [e["value"] for e in facts["fees"]])
+        self.assertFalse(any("課本" in e["value"] or "教材" in e["value"] for e in facts["fees"]))
+        target_fees = extract_facts(
+            "2027/28 學年各項收費如下：\n"
+            "幼兒班課本 (上學期) $33.6\n"
+            "幼兒班學習教材、簿冊、美勞用品 (上學期) $595.5\n"
+            "半日班學費全免\n"
+            "上午班：每月學費 $0\n"
+            "每月茶點費 $214\n"
+            "全日班：每月學費 $1,432\n"
+            "每月膳費 $550",
+            "https://school.example/admission",
+        )["fees"]
+        self.assertEqual(len(target_fees), 5)
+        self.assertTrue(all(e["target_year"] == 2027 for e in target_fees))
         non_tuition = extract_facts("2027/28 K1 收生\n報名費 $40", "https://school.example/admission")
         self.assertEqual(field_states([{"facts": non_tuition}], 0)["fees"]["status"], "NOT_FOUND")
 
