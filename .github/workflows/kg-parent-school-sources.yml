@@ -23,6 +23,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with: {persist-credentials: false}
+      - uses: actions/setup-node@v5
+        with: {node-version: '24', package-manager-cache: false}
+      - run: corepack enable && corepack prepare pnpm@10.28.0 --activate
+      - run: pnpm install --frozen-lockfile
       - uses: actions/download-artifact@v7
         with:
           artifact-ids: '10587380247'
@@ -32,10 +36,14 @@ jobs:
           merge-multiple: true
       - name: Install text-only PDF extraction
         run: sudo apt-get update && sudo apt-get install -y poppler-utils
+      - name: Build the existing 1,025-card kindergarten scope
+        run: |
+          ln -s "$GITHUB_WORKSPACE/base/apps/web/dist-production" apps/web/dist-production
+          pnpm exec tsx scripts/kg-parent-inputs.ts
       - name: Validate full KG scope without network
-        run: python scripts/kg-parent-school-sources.py --target-year "${{ inputs.target_year || '2027' }}" --base base/apps/web/dist-production --out captured-parent/school-sources --plan-only
+        run: python scripts/kg-parent-school-sources.py --target-year "${{ inputs.target_year || '2027' }}" --base base/apps/web/dist-production --parent-inputs artifacts/kg-parent/inputs.json --out captured-parent/school-sources --plan-only
       - name: Bounded official school source discovery and capture
-        run: python scripts/kg-parent-school-sources.py --target-year "${{ inputs.target_year || '2027' }}" --base base/apps/web/dist-production --out captured-parent/school-sources
+        run: python scripts/kg-parent-school-sources.py --target-year "${{ inputs.target_year || '2027' }}" --base base/apps/web/dist-production --parent-inputs artifacts/kg-parent/inputs.json --out captured-parent/school-sources
       - uses: actions/upload-artifact@v6
         if: always()
         with:
