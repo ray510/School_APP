@@ -2,20 +2,20 @@
 
 ## 2026-09-21 2027/28 幼稚園逐校來源完整執行
 
-PR [#16](https://github.com/ray510/HK_APP/pull/16) 及 [#17](https://github.com/ray510/HK_APP/pull/17) 已合併為 `182c96f7cd9cc6f298daa6b5cde4e1d388cc96cd` 及 `52dd9f3a5447a9812c79ae00cb7c8e5398a0736b`。流程以現有 1,025 張幼稚園家長卡為唯一 scope，逐校只在登記校網的 HTTPS 原路徑、首頁及同一 www／apex host 內作有限擷取；不略過 TLS、公開 IP、redirect、host、文件大小或總容量限制。失敗會保存 checked URL、時間及 DNS、TLS、HTTP、timeout 等 reason code；沒有網址與網絡擷取失敗分開處理。
+逐校擷取及誤判修正已經由 PR [#16](https://github.com/ray510/HK_APP/pull/16) 至 [#24](https://github.com/ray510/HK_APP/pull/24) 分批合併；production asset API 及分頁前端由 PR [#26](https://github.com/ray510/HK_APP/pull/26) 合併為 `1f6a5c2c9726296aab68dadbc7ceb017b5437c24`。流程以現有 1,025 張幼稚園家長卡為唯一 scope，逐校只在登記校網的 HTTPS 原路徑、首頁及同一 www／apex host 內作有限擷取；不略過 TLS、公開 IP、redirect、host、文件大小或總容量限制。失敗會保存 checked URL、時間及 DNS、TLS、HTTP、timeout 等 reason code；沒有網址與網絡擷取失敗分開處理。
 
-全量 source run [35589547469](https://github.com/ray510/HK_APP/actions/runs/35589547469) 為 `completed / success`：1,025 個 school IDs 全部唯一，488 校成功擷取、147 校有至少一項 2027/28 候選、341 校只有待核對／非目標年資料、474 校擷取失敗、63 校的年度資料沒有登記網址。四個欄位合共 `NOT_RUN=0`，所有 `CANDIDATE` 都有本地 2027/28 evidence；原始頁面只保留在 90 日 CI artifact，不提交 Git。
+最新全量 source run [35606742074](https://github.com/ray510/HK_APP/actions/runs/35606742074) 為 `completed / success`，artifact `kg-parent-school-sources-35606742074` 已上傳：1,025 個 school IDs 全部唯一，488 校成功擷取，其中 139 校有至少一項 2027/28 候選、349 校只有待核對／非目標年資料；474 校擷取失敗，63 校的年度資料沒有登記網址。四個欄位合共 `NOT_RUN=0`，保存 939 個來源頁面及 1,552 個文件檔；manifest SHA-256 為 `ebbc5be2e04f95792fca31e421d72cbce6c2fe7db12430841decc41ac3288dc3`。原始頁面只保留在 90 日 CI artifact，不提交 Git。
 
 | 2027/28 逐校欄位 | `CANDIDATE` | `REVIEW` | `NOT_FOUND` | `FETCH_FAILED` |
 |---|---:|---:|---:|---:|
-| 報名日期／步驟 | 143 | 140 | 268 | 474 |
-| 表格／網上表格 | 104 | 227 | 220 | 474 |
-| 校本費用 | 1 | 36 | 514 | 474 |
+| 報名日期／步驟 | 134 | 147 | 270 | 474 |
+| 表格／網上表格 | 86 | 164 | 301 | 474 |
+| 校本費用 | 2 | 28 | 521 | 474 |
 | 上課／班別時間 | 0 | 27 | 524 | 474 |
 
-目標年 evidence 為報名 718 段、表格 255 段、費用 1 段、上課時間 0 段。唯一目標年費用候選是天主教露德聖母幼稚園頁面所載「半日班學費（扣減政府資助後全年收費）$1,170」，仍標記 `REVIEW_REQUIRED / UNPUBLISHED`。先前 run `35581155715` 曾把墨爾文幼稚園 open-day 活動的 `5–6:30 pm` 誤作上課時間；內容抽查發現後停止發布，收窄 class-hour 語境並加入回歸測試，新 run 的目標年上課時間候選為 0。
+目標年 evidence 為報名 588 段、表格 199 段、費用 10 段、上課時間 0 段。費用候選來自保良局莊啓程夫人幼稚園及基督教香港信義會沙田信義幼稚園，仍標記 `REVIEW_REQUIRED / UNPUBLISHED`，不可當作 2027/28 已確認報價。先前 run `35581155715` 曾把墨爾文幼稚園 open-day 活動的 `5–6:30 pm` 誤作上課時間；內容抽查發現後停止發布，收窄 class-hour 語境並加入回歸測試，最新 run 的目標年上課時間候選為 0。
 
-前端索引會顯示每校實際來源問題，例如 HTTP 403、HTTP 405、TLS、DNS、timeout 或「年度校情資料未有登記學校網址」，不再把所有學校壓成同一句「請查校方公告」。這不把未知資料變成零收費、全日班、未公布或已確認；`CANDIDATE`／`REVIEW` 仍須逐項人工身份、學年及內容覆核才可成為已發布 facts。離線驗證使用 Node `24.19.0`、pnpm `10.28.0` 及 Python `3.13.7`：`pnpm typecheck`、`pnpm lint`、70 個 regression、188 個 Vitest、39 個 Python KG tests及 `git diff --check` 均通過；production deployment 及 live browser acceptance 仍是獨立發布閘門。
+前端索引會顯示每校實際來源問題，例如 HTTP 403、HTTP 405、TLS、DNS、timeout 或「年度校情資料未有登記學校網址」，不再把所有學校壓成同一句「請查校方公告」。這不把未知資料變成零收費、全日班、未公布或已確認；`CANDIDATE`／`REVIEW` 仍須逐項人工身份、學年及內容覆核才可成為已發布 facts。production Worker 新增只讀 `/api/v1/kindergartens` 及 detail route，直接讀取 manifest 指向的 immutable assets，不接 D1；列表改為每頁 12 間，私人清單只傳 school IDs，不傳筆記或進度。Node `24.19.0`、pnpm `10.28.0` 下 `pnpm typecheck`、`pnpm lint`、70 個 regression、192 個 Vitest、web／Worker build 及 GitHub local acceptance 均通過；production deployment 及 live browser acceptance 仍是獨立發布閘門。
 
 ## 2026-09-21 幼稚園家長卡片證據修正（已上線）
 
