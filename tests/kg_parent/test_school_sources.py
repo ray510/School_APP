@@ -122,6 +122,8 @@ class SchoolSources(unittest.TestCase):
                 ("/", "2027/28 申請表"),
                 ("/?section=forms", "2027/28 申請表"),
                 ("#tab-fee", "2027/28 申請表"),
+                ("/school-information/history", "School information"),
+                ("/student-performance", "Student performance"),
                 ("/forms/k1-application-form.pdf", "K1 申請表"),
                 ("/forms/2027-2028-application-form.pdf", "K1 申請表"),
                 ("/forms/2026-2027-application-form.pdf", "2026/27 申請表"),
