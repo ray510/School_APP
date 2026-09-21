@@ -1,7 +1,9 @@
 import type {Classification} from '../classification';
 import type {Admission} from '../catalog';
 export interface FeeRow {grade:string;session:string;category:string;cents:number;periods:number;annual_cents:number;evidence_text?:string}
-export interface KGSummary {id:string;aliases:string[];name:string;address:string;district:string;sessions:string[];classification:Classification;profile_available:boolean;fee_status:string;fee_effective_from?:string;tuition_rows:FeeRow[];has_school_events:boolean;parent_analysis_status:string}
+export interface KGApplicationScope {year:number;grade:string;summary:string;next_step:string}
+export interface KGParentHighlight {topic:string;text:string}
+export interface KGSummary {id:string;aliases:string[];name:string;address:string;district:string;sessions:string[];classification:Classification;profile_available:boolean;fee_status:string;fee_effective_from?:string;tuition_rows:FeeRow[];has_school_events:boolean;application_scopes:KGApplicationScope[];school_event_years:number[];parent_highlight:KGParentHighlight|null;parent_analysis_status:string}
 export interface Fact {value:string;field:string;state:string;edition:string;row:number;record_sha256:string}
 export interface SourcePage {id:string;url:string;text:string;captured_at:string;sha256:string;fact_status:string}
 export interface Evidence {field:string;text:string;source_id:string;edition:string;row:number;record_sha256:string}
@@ -17,6 +19,19 @@ export function costs(rows:FeeRow[],grade:string,session:string):{rows:FeeRow[];
  return {rows:selected,subtotal:selected.some(r=>r.category==='tuition')?selected.reduce((s,r)=>s+r.annual_cents,0):null,periods:[...new Set(selected.map(r=>r.periods))].join('／'),complete:false};
 }
 export function feePeriod(date:string|undefined,year:number):string {return date?`${date} 起生效；${Number(date.slice(0,4))===year?'請確認目標學年仍適用':'不是 '+year+'/'+String(year+1).slice(-2)+' 已確認報價'}`:'尚未取得可計算的同校址收費文件';}
+export function feeCard(s:KGSummary,grade:string,session:string,year:number):{value:string;detail:string} {
+ const c=costs(s.tuition_rows,grade,session);if(c.subtotal!==null)return {value:money(c.subtotal)+'／年，已知小計',detail:feePeriod(s.fee_effective_from,year)};
+ const className=grade+' '+(sessions[session]??session),period=feePeriod(s.fee_effective_from,year);
+ if(s.fee_status==='LAYOUT_REVIEW')return {value:'收費文件版面待覆核',detail:`已取得 ${period.replace('；','文件；版面待覆核，暫未能計算 '+className+'小計；')}`};
+ return {value:`未有 ${className}可核對小計`,detail:s.fee_effective_from?period+'；文件未有此班別通過核對的學費資料。':period};
+}
+export function admissionCard(s:KGSummary,grade:string,year:number):{value:string;detail:string} {
+ const schoolYear=year+'/'+String(year+1).slice(-2),scope=s.application_scopes?.find(x=>x.year===year&&x.grade===grade);
+ if(scope)return {value:`已核對 ${schoolYear} ${grade} 校方申請步驟`,detail:scope.next_step||scope.summary};
+ if(grade==='K1'&&s.school_event_years?.includes(year))return {value:`有本校 ${schoolYear} 招生公告`,detail:'請開啟學校頁查看適用條件及日期。'};
+ if(s.has_school_events)return {value:'只有其他學年本校公告',detail:`未接通 ${schoolYear} ${grade} 校方申請日期；不沿用舊年份截止日。`};
+ return {value:`未接通 ${schoolYear} ${grade} 校方公告`,detail:'公開資料未有具體當屆步驟；不代表學校尚未公布。'};
+}
 export function sessionMeaning(s:{sessions:string[]},session:string):string {
  const codes:Record<string,string>={WD:'全日',AM:'上午',PM:'下午'};
  return s.sessions.some(x=>x.includes(codes[session]))?'名錄有'+sessions[session]+'記載；目標學年開班及接送時間待確認':'未有此班別的名錄記載；不等於已確認停辦';
