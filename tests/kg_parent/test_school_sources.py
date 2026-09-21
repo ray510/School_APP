@@ -129,6 +129,7 @@ class SchoolSources(unittest.TestCase):
                 ("/student-performance", "Student performance"),
                 ("/open-day", "2027/28 K1 開放日報名表格"),
                 ("/family-game", "2027/28 親子遊戲日 https://forms.gle/event"),
+                ("/briefing", "2027/28 K1 網上簡介會報名表格"),
                 ("/forms/k1-application-form.pdf", "K1 申請表"),
                 ("/forms/2027-2028-application-form.pdf", "K1 申請表"),
                 ("/forms/2026-2027-application-form.pdf", "2026/27 申請表"),
@@ -151,6 +152,20 @@ class SchoolSources(unittest.TestCase):
 
         event = extract_facts("2027/28 K1 招生\n開放日 報名表格：", "https://school.example/")
         self.assertEqual(event.get("form", []), [])
+
+    def test_event_registration_is_not_admission_evidence(self):
+        event = extract_facts(
+            "2027/28 K1 招生\n開放日將於2026年9月12日舉行，歡迎網上報名",
+            "https://school.example/",
+        )
+        self.assertEqual(event.get("application", []), [])
+        self.assertEqual(event.get("form", []), [])
+
+        admission = extract_facts(
+            "2027/28 K1 入學申請\n首輪申請截止日期為2026年10月31日，之後將安排簡介會",
+            "https://school.example/admission",
+        )
+        self.assertTrue(any(e["field"] == "application_dates" for e in admission["application"]))
 
     def test_submission_and_office_times_are_application_evidence_not_class_hours(self):
         facts = extract_facts(
