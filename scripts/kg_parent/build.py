@@ -120,10 +120,13 @@ def reuse_profile_results(prepared,results):
  mapped=[]
  for result in results:
   record=by_hash[result['profile_hash']];profile=record['profile']
+  selections={}
   for decision in result['selections'].values():
    e=decision.get('evidence')
    if e and (profile['fields'].get(e['field'])!=e['text'] or e['record_sha256']!=profile['record_sha256']):raise ValueError('Source quote mismatch')
-  mapped.append({**result,'id':record['id']})
+  for topic,decision in result['selections'].items():
+   selections[topic]={**decision,'state':'NOT_ESTABLISHED','evidence':None} if decision.get('evidence') and is_generic_guidance(decision['evidence']['text']) else decision
+  mapped.append({**result,'id':record['id'],'selections':selections})
  return mapped
 
 def inference():

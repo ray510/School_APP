@@ -30,6 +30,14 @@ class SchoolSources(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Source quote mismatch"):
             reuse_profile_results(prepared, [result])
 
+    def test_generic_guidance_is_removed_from_reused_selections(self):
+        profile = {"fields": {"申請方法": "請瀏覽學校網頁"}, "record_sha256": "a" * 64}
+        prepared = {"records": [{"id": "school", "profile": profile}]}
+        result = {"id": "school", "profile_hash": "a" * 64, "selections": {"admission": {"state": "SUPPORTED", "evidence": {"field": "申請方法", "text": "請瀏覽學校網頁", "record_sha256": "a" * 64}}}}
+        selection = reuse_profile_results(prepared, [result])[0]["selections"]["admission"]
+        self.assertEqual(selection["state"], "NOT_ESTABLISHED")
+        self.assertIsNone(selection["evidence"])
+
     def test_target_year_is_explicit(self):
         self.assertTrue(is_target_year("2027/28 K1 入學申請"))
         self.assertTrue(is_target_year("2027 至 2028 學年 K1 入學申請"))
