@@ -13,8 +13,10 @@ def dedupe(items):
 m=read(dist/'kg-parent-manifest.json');folder=dist/'kg-parent'/m['bundle_id'];idx=read(folder/'index.json');aliases=read(folder/'aliases.json');prepared=read(out/'prepared.json');source={r['id']:r for r in prepared['records']};inputs=read(out/'inputs.json');original={r['id']:r for r in inputs['records']}
 assert m['schema']==2
 assert len(aliases)==m['source_groups']==1759 and len(idx)==m['parent_cards']==1025;assert len(source)==len(idx)
+assert (folder/'index.json').stat().st_size < 2*1024*1024
 seen=set();quotes=0;fee_rows=0
 for entry in idx:
+ assert 'classification' not in entry
  s=read(folder/'schools'/(entry['id']+'.json'));o=original[s['id']]
  assert s['aliases']==o['aliases'] and s['name']==o['name']
  assert s['profile']==(o['annual'][0] if len(o['annual'])==1 else None)
