@@ -114,6 +114,18 @@ def evidence_blocks(r):
   blocks.append({'id':'E'+str(len(blocks)),'field':field,'text':value,'source_id':p['source_id'],'edition':p['edition'],'row':p['row'],'record_sha256':p['record_sha256']})
  return blocks
 
+def reuse_profile_results(prepared,results):
+ records=[r for r in prepared['records'] if r['profile']];by_hash={r['profile']['record_sha256']:r for r in records};result_hashes={r['profile_hash'] for r in results}
+ if len(by_hash)!=len(records) or len(results)!=len(records) or len(result_hashes)!=len(results) or result_hashes!=set(by_hash):raise ValueError('Inference profile coverage differs')
+ mapped=[]
+ for result in results:
+  record=by_hash[result['profile_hash']];profile=record['profile']
+  for decision in result['selections'].values():
+   e=decision.get('evidence')
+   if e and (profile['fields'].get(e['field'])!=e['text'] or e['record_sha256']!=profile['record_sha256']):raise ValueError('Source quote mismatch')
+  mapped.append({**result,'id':record['id']})
+ return mapped
+
 def inference():
  sys.path.insert(0,str(ROOT/'scripts'));from jev_analysis import Client,provider_config,choice,CallError
  prepared=read(OUT/'prepared.json');records=[r for r in prepared['records'] if r['profile']]
