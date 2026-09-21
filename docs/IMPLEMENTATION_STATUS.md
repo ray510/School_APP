@@ -10,9 +10,13 @@ builder 可選擇讀取 `captured-parent/school-sources/manifest.json`，並把�
 
 同次 production run `35566099254` 在 local browser gate 停止：新增逐校公告後，舊測試的泛用 `.kg-small strong` locator 同時命中「逐校公告」與「適應同支援」；desktop/mobile 各一項失敗、其餘 32/34 journeys 通過，沒有執行 deployment。修正只把 assertion 收窄至原本要驗證的「適應同支援」label。
 
-PR #8 已合併，程式版 production release 已啟動；`school_sources` 首次 run 在網絡擷取前 fail closed，因此 live capture 仍為 `NOT_RUN`，本 scope hotfix 的 merge/deploy 亦尚待完成。不能宣稱 1,025 間已有 2027/28 日期、表格、費用或時間；沒有 evidence 的學校仍會明確顯示未執行、未找到、擷取失敗或待覆核狀態。CodeGraph 未經授權初始化，本輪按要求以 direct-file inspection 作 fallback。
+首次注入 source artifact 的 production run `35567086128` 在 provenance verifier 停止，沒有執行 deployment：同一 URL 重抓後可能有動態內容，舊 URL-hash 檔名會覆蓋較早 capture，但 manifest 仍保留較早 SHA。後續改用完整內容 SHA 及文件類型作檔名，每個實際版本獨立保存；不放寬 byte hash 驗證。
 
-本分支經主代理重跑的離線驗證使用 Node `24.19.0`、pnpm `10.28.0` 及 Python `3.12.14`：`pnpm typecheck`、`pnpm lint`、70 個 regression、182 個 Vitest、22 個 Python KG tests、Python `py_compile`、source-job `--help` 及 production Vite build 均為 `PASS`。主代理 review 另修正 PDF 不再誤作 HTML link discovery、redirect／DNS 在連線前拒絕非公開位址、Big5 頁面解碼，以及 `FETCH_FAILED`／`NOT_FOUND` 不覆蓋既有已核對事件或收費狀態。local workerd／desktop-mobile Playwright 為 `NOT_RUN`：此 clean worktree 沒有 parent release 所需的 `apps/web/dist-production/kg-parent-manifest.json`、完整 base catalog 或 `artifacts/production/wrangler.production.json`；不以現行 production 站或不完整資料冒充本分支 real-data acceptance。
+修正後的 source run `35566593301` 完成全部 1,025 張卡 scope，擷取到 165 校共 497 頁；86 校有 2027/28 候選。四個優先欄位的 candidate school counts 為報名 74、表格 86、費用 19、上課時間 4。所有結果仍是未發布的 review artifact，不能當成已確認資料；沒有 evidence 的學校仍明確保留 `REVIEW`、`FETCH_FAILED` 或 `NOT_FOUND`。
+
+該 run 的 764 個 `NOT_FOUND` 中，701 個有年度檔登記的 `http://` 官方學校網址，63 個沒有網址。後續修正只把已登記同一 host 的 HTTP URL 升級成 HTTPS 候選，仍不會經明文 HTTP 擷取，亦繼續執行 HTTPS、DNS、redirect、host 及 bytes 安全 gate。CodeGraph 未經授權初始化，本輪按要求以 direct-file inspection 作 fallback。
+
+本分支經主代理重跑的離線驗證使用 Node `24.19.0`、pnpm `10.28.0` 及 Python `3.12.14`：`pnpm typecheck`、`pnpm lint`、70 個 regression、182 個 Vitest、24 個 Python KG tests、Python `py_compile`、source-job `--help` 及 production Vite build 均為 `PASS`。主代理 review 另修正 PDF 不再誤作 HTML link discovery、redirect／DNS 在連線前拒絕非公開位址、Big5 頁面解碼，以及 `FETCH_FAILED`／`NOT_FOUND` 不覆蓋既有已核對事件或收費狀態。local workerd／desktop-mobile Playwright 為 `NOT_RUN`：此 clean worktree 沒有 parent release 所需的 `apps/web/dist-production/kg-parent-manifest.json`、完整 base catalog 或 `artifacts/production/wrangler.production.json`；不以現行 production 站或不完整資料冒充本分支 real-data acceptance。
 
 ## 2026-09-21 幼稚園家長卡片證據修正（已上線）
 

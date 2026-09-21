@@ -7,6 +7,7 @@ from unittest.mock import patch
 from scripts.kg_parent.school_sources import (
     content_sha256,
     decode_html,
+    document_key,
     discover_links,
     extract_facts,
     field_states,
@@ -14,6 +15,7 @@ from scripts.kg_parent.school_sources import (
     read_base_schools,
     require_public_host,
     safe_https_url,
+    school_https_root,
 )
 
 
@@ -26,6 +28,12 @@ class SchoolSources(unittest.TestCase):
     def test_private_literal_and_ports_are_rejected(self):
         self.assertIsNone(safe_https_url("https://127.0.0.1/admission", "127.0.0.1"))
         self.assertIsNone(safe_https_url("https://school.example:8443/admission", "school.example"))
+
+    def test_registered_http_school_url_is_only_fetched_as_https(self):
+        self.assertEqual(
+            school_https_root("http://www.school.example/admission"),
+            ("https://www.school.example/admission", "www.school.example"),
+        )
 
     def test_private_dns_result_is_rejected_before_fetch(self):
         with patch("scripts.kg_parent.school_sources.socket.getaddrinfo", return_value=[(2, 1, 6, "", ("10.0.0.1", 443))]):
@@ -56,6 +64,10 @@ class SchoolSources(unittest.TestCase):
         raw = "2027/28 K1".encode()
         self.assertEqual(content_sha256(raw), content_sha256(raw))
         self.assertNotEqual(content_sha256(raw), content_sha256(b"changed"))
+
+    def test_document_path_changes_with_captured_bytes(self):
+        self.assertNotEqual(document_key(b"first", False), document_key(b"changed", False))
+        self.assertNotEqual(document_key(b"first", False), document_key(b"first", True))
 
     def test_parent_card_scope_is_used_instead_of_raw_source_groups(self):
         with tempfile.TemporaryDirectory() as directory:
