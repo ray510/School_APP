@@ -1,5 +1,7 @@
 """Independent output reconciliation: sources, original IDs, model quotes and fees."""
-import pathlib,json,hashlib,collections
+import pathlib,json,hashlib,collections,sys
+sys.path.insert(0,str(pathlib.Path(__file__).resolve().parents[1]))
+from scripts.kg_parent.facts import is_generic_guidance
 root=pathlib.Path('.');dist=root/'apps/web/dist-production';out=root/'artifacts/kg-parent'
 def read(p):return json.loads(p.read_text())
 m=read(dist/'kg-parent-manifest.json');folder=dist/'kg-parent'/m['bundle_id'];idx=read(folder/'index.json');aliases=read(folder/'aliases.json');prepared=read(out/'prepared.json');source={r['id']:r for r in prepared['records']};inputs=read(out/'inputs.json');original={r['id']:r for r in inputs['records']}
@@ -23,6 +25,15 @@ for entry in idx:
   for selection in s['parent_analysis']['selections'].values():
    e=selection.get('evidence')
    if e:assert e['record_sha256']==p['record_sha256'] and p['fields'][e['field']]==e['text'];quotes+=1
+ for selection in s['parent_analysis']['selections'].values():
+  e=selection.get('evidence')
+  if e:assert not is_generic_guidance(e['text'])
+ sources=s.get('school_sources',{});assert sources.get('target_entry_year')==2027
+ for field in ('application','form','fees','hours'):
+  state=sources['fields'][field];assert state['status'] in {'NOT_RUN','CANDIDATE','REVIEW','FETCH_FAILED','NOT_FOUND','PUBLISHED'}
+  for page in sources.get('pages',[]):
+   path=root/'captured-parent'/'school-sources'/page['path']
+   if path.exists():assert hashlib.sha256(path.read_bytes()).hexdigest()==page['sha256']
  for f in s['fees']['rows']:
   d=s['fees']['document'];text=(root/'captured-parent'/d['text_path']).read_text();assert text[f['evidence_start']:f['evidence_end']]==f['evidence_text'];assert f['cents']*f['periods']==f['annual_cents'];fee_rows+=1
  for h in s['hours']:assert any(h['evidence'] in d['text'] and h['source_url']==d['url'] for d in s['new_pages'])

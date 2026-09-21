@@ -2,7 +2,7 @@
 No original source, school ID, other school level or private record is mutated.
 """
 import pathlib,json,hashlib,datetime,collections,sys,re,zipfile,concurrent.futures,os
-from .facts import certificate,norm,source_fact
+from .facts import certificate,norm,source_fact,is_generic_guidance
 ROOT=pathlib.Path(__file__).resolve().parents[2];OUT=ROOT/'artifacts/kg-parent';DIST=ROOT/'apps/web/dist-production';CAP=ROOT/'captured-parent'
 def read(p):return json.loads(p.read_text(encoding='utf8'))
 def stable(x):return json.dumps(x,ensure_ascii=False,sort_keys=True,separators=(',',':'))
@@ -18,9 +18,32 @@ TOPICS={
 CARE_FIELDS=['提供延長服務時間','提供暫托服務','提供2-3歲幼兒服務']
 ADMISSION_FIELDS=['申請時間類別','申請表格類別','開始申請日期','結束申請日期','其他核准收費_報名費','註冊費_全日班','註冊費_半日班']
 SUPPLY_FIELDS=['冬季校服','夏季校服','書包','課本','茶點','文具','練習簿_作業','寢具']
+SOURCE_STATUSES={'NOT_RUN','CANDIDATE','REVIEW','FETCH_FAILED','NOT_FOUND','PUBLISHED'}
+SOURCE_FIELDS=('application','form','fees','hours')
+def default_school_sources():
+ fields={k:{'status':'NOT_RUN','target_year':2027,'reference_year':None,'evidence_count':0,'evidence':[],'review_status':'NOT_STARTED','publication_status':'UNPUBLISHED'} for k in SOURCE_FIELDS}
+ return {'schema':1,'target_entry_year':2027,'checked_at':None,'discovery_status':'NOT_RUN','identity_status':'NOT_RUN','review_status':'NOT_STARTED','publication_status':'UNPUBLISHED','pages':[],'fields':fields}
+def load_school_sources():
+ path=CAP/'school-sources'/'manifest.json'
+ if not path.exists():return {}
+ manifest=read(path)
+ if manifest.get('schema')!=1 or manifest.get('target_entry_year')!=2027 or manifest.get('scope')!='ALL_KG_PARENT_CARDS':raise ValueError('Invalid KG school-source scope')
+ entries=manifest.get('schools',[]);ids=[x.get('school_id') for x in entries]
+ if len(entries)!=1025 or len(set(ids))!=len(ids):raise ValueError('KG school-source coverage is not full and unique')
+ result={}
+ for entry in entries:
+  if not entry.get('school_id') or entry.get('target_entry_year')!=2027 or entry.get('discovery_status') not in SOURCE_STATUSES:raise ValueError('Invalid KG school-source record')
+  fields=entry.get('fields',{})
+  if set(fields)!=set(SOURCE_FIELDS) or any(value.get('status') not in SOURCE_STATUSES for value in fields.values()):raise ValueError('Invalid KG school-source field state')
+  for page in entry.get('pages',[]):
+   if page.get('capture_status')!='CAPTURED' or not re.fullmatch(r'[a-f0-9]{64}',page.get('sha256','')):raise ValueError('Invalid KG school-source provenance')
+  result[entry['school_id']]=entry
+ return result
 def prepare():
  inp=read(OUT/'inputs.json');capture=read(CAP/'manifest.json')
  if capture['base_data_id']!=inp['data_id'] or len(capture['profiles'])!=962:raise ValueError('Capture source differs')
+ source_by_id=load_school_sources()
+ if source_by_id and set(source_by_id)!={record['id'] for record in inp['records']}:raise ValueError('KG school-source IDs differ from parent cards')
  docs={d['id']:d for d in capture['documents']};verified={}
  for key,d in docs.items():
   if d['status']!='CAPTURED':continue
@@ -50,7 +73,7 @@ def prepare():
   candidates=[x for x in s['official'] if x['association']['state']!='EVIDENCE_LINKED']
   events=[e for e in inp['events'] if e.get('school_id') and set(e['school_catalog_ids'])&set(s['aliases'])]
   record={k:s[k] for k in ('id','aliases','name','address','district','sessions','classification')}
-  record.update(profile=p,profile_resolution=s.get('profile_resolution'),fees=fees,care=care,admissions=admissions,supplies=supplies,official=linked,official_candidates=len(candidates),vacancies=vacancies,events=events,topics=s['insights'],new_pages=[],hours=[],application_steps=[],website=fields.get('學校網址',''),phone=fields.get('電話',''),education_plan_basis='歷史概覽分類；當屆與個人資格另核對')
+  record.update(profile=p,profile_resolution=s.get('profile_resolution'),fees=fees,care=care,admissions=admissions,supplies=supplies,official=linked,official_candidates=len(candidates),vacancies=vacancies,events=events,topics=s['insights'],new_pages=[],hours=[],application_steps=[],website=fields.get('學校網址',''),phone=fields.get('電話',''),school_sources=source_by_id.get(s['id']) or default_school_sources(),education_plan_basis='歷史概覽分類；當屆與個人資格另核對')
   if p:profilekeys.add((p['source_id'],p['row'],p['record_sha256']))
   records.append(record)
  page_codes={'ssckg-admission':'150843','hoching-hours':'525758','tpmk-arrangements':'158895','ymcafr-hours':'565520','waichow-admission':'158208','waichow-hours':'158208','rhenish-home':'157406','ymca-admission':'575429'}
@@ -87,7 +110,7 @@ def evidence_blocks(r):
  p=r['profile'];blocks=[]
  if not p:return blocks
  for field,value in p['fields'].items():
-  if not re.search('課程|教學|活動|支援|適應|申請|延長|暫托|家校|午睡',field) or not value.strip() or value.strip() in ('-','未有提供'):continue
+  if not re.search('課程|教學|活動|支援|適應|申請|延長|暫托|家校|午睡',field) or not value.strip() or value.strip() in ('-','未有提供') or is_generic_guidance(value):continue
   blocks.append({'id':'E'+str(len(blocks)),'field':field,'text':value,'source_id':p['source_id'],'edition':p['edition'],'row':p['row'],'record_sha256':p['record_sha256']})
  return blocks
 
@@ -140,14 +163,14 @@ def finalize():
   for step in r['application_steps']:groups[(step['year'],step['grade'])].append(step['action'])
   scopes=[{'year':year,'grade':grade,'summary':steps[0],'next_step':steps[1] if len(steps)>1 else steps[0]} for (year,grade),steps in groups.items()]
   selections=r['parent_analysis'].get('selections',{});highlight=next(({'topic':TOPICS[key][0],'text':selections[key]['evidence']['text']} for key in TOPICS if selections.get(key,{}).get('state')=='SUPPORTED' and selections[key].get('evidence')),None)
-  index.append({k:r[k] for k in ('id','aliases','name','address','district','sessions','classification')}|{'profile_available':bool(r['profile']),'fee_status':r['fees']['status'],'fee_effective_from':r['fees'].get('effective_from'),'tuition_rows':[{k:v for k,v in f.items() if not k.startswith('evidence')} for f in r['fees']['rows']],'has_school_events':bool(r['events']),'application_scopes':scopes,'school_event_years':sorted({e['entry_year'] for e in r['events']}),'parent_highlight':highlight,'parent_analysis_status':r['parent_analysis']['status']})
- write(folder/'index.json',index);write(folder/'aliases.json',aliases);write(folder/'common-events.json',p['common_events'])
+  index.append({k:r[k] for k in ('id','aliases','name','address','district','sessions','classification')}|{'profile_available':bool(r['profile']),'fee_status':r['fees']['status'],'fee_effective_from':r['fees'].get('effective_from'),'tuition_rows':[{k:v for k,v in f.items() if not k.startswith('evidence')} for f in r['fees']['rows']],'has_school_events':bool(r['events']),'application_scopes':scopes,'school_event_years':sorted({e['entry_year'] for e in r['events']}),'parent_highlight':highlight,'parent_analysis_status':r['parent_analysis']['status'],'school_source_status':r['school_sources']['discovery_status'],'school_source_checked_at':r['school_sources'].get('checked_at'),'school_source_fields':{key:{'status':value['status'],'evidence_count':value.get('evidence_count',0)} for key,value in r['school_sources']['fields'].items()}})
+ write(folder/'index.json',index);write(folder/'aliases.json',aliases);write(folder/'common-events.json',p['common_events']);write(folder/'school-sources.json',{r['id']:r['school_sources'] for r in p['records']})
  summary={k:v for k,v in ai.items() if k!='results'}
  manifest={'schema':INDEX_SCHEMA,'phase':'KG_ONLY','bundle_id':bundle,'base_data_id':p['base_data_id'],'analysis_id':p['analysis_id'],'official_bundle_id':p['official_bundle_id'],'source_groups':p['source_groups'],'parent_cards':len(index),'annual_profiles':962,'generated_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'fee_status_counts':p['fee_status_counts'],'public_capture':p['capture_summary'],'public_page_documents':p['page_documents'],'inference':summary,'scope':'All existing KG groups retained; document parsing and individual school-page coverage vary. No 2027 fee guarantee, rankings or private model data.','human_usability_test':'NOT_RUN','school_pages_linked':sum(bool(r['new_pages']) for r in p['records'])}
  write(folder/'manifest.json',manifest);write(DIST/'kg-parent-manifest.json',manifest)
  download=OUT/('school-kg-parent-'+bundle[:16]+'.zip')
  with zipfile.ZipFile(download,'w',zipfile.ZIP_DEFLATED) as z:
-  z.writestr('manifest.json',stable(manifest));z.writestr('schools.json',stable(p['records']));z.writestr('inference.json',stable(ai));z.writestr('capture-manifest.json',(CAP/'manifest.json').read_text())
+  z.writestr('manifest.json',stable(manifest));z.writestr('schools.json',stable(p['records']));z.writestr('school-sources.json',stable({r['id']:r['school_sources'] for r in p['records']}));z.writestr('inference.json',stable(ai));z.writestr('capture-manifest.json',(CAP/'manifest.json').read_text())
  public=DIST/'downloads';public.mkdir(exist_ok=True);(public/'kg-parent-data.zip').write_bytes(download.read_bytes())
  raw=OUT/('school-kg-raw-'+bundle[:16]+'.zip')
  with zipfile.ZipFile(raw,'w',zipfile.ZIP_DEFLATED) as z:

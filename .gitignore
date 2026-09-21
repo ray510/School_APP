@@ -1,6 +1,7 @@
 # --- hk-school-guide: never commit raw archives, processing evidence or secrets (DEVELOPMENT.md §8.2)
 archive/
 artifacts/
+captured-parent/
 backups/
 .wrangler/
 node_modules/

@@ -3,6 +3,7 @@ const ids=['school_2468a6d82a2fad7b858cd5b6','school_b579ecbc45cca6d4f62c20c9','
 test('KG parent needs to evidence comparison without raw status controls',async({page,request})=>{
  const m:KGManifest=await(await request.get('/kg-parent-manifest.json')).json();expect(m.phase).toBe('KG_ONLY');expect(m.annual_profiles).toBe(962);expect(m.source_groups).toBe(1759);const rows:KGSummary[]=await(await request.get('/kg-parent/'+m.bundle_id+'/index.json')).json();expect(new Set(rows.flatMap(r=>r.aliases)).size).toBe(1759);
  await page.goto('/kindergarten');await expect(page.getByRole('heading',{name:'先搵到夾你生活的幼稚園。'})).toBeVisible();await expect(page.getByRole('heading',{name:'你的選校需要'})).toBeVisible();await expect(page.getByLabel('JEV 資料狀態')).toHaveCount(0);
+ await expect(page.locator('[data-source-status="school-announcement"]').first()).toContainText('逐校公告');
  // Select by the actual accessibility-tree control name, not the text of its enclosing label and options.
  const district=page.getByRole('combobox',{name:'地區',exact:true});await expect(district).toBeVisible();await district.selectOption('北區');await expect(district).toHaveValue('北區');await page.getByRole('button',{name:'按需要更新'}).click();await expect(page).toHaveURL(/district=/);await expect(page.locator('.kg-search-card').first()).toBeVisible();await expect(page.locator('.kg-search-card .kg-kicker').first()).toHaveText('北區');
  await page.screenshot({path:test.info().outputPath('kg-parent-search.png'),fullPage:true});
