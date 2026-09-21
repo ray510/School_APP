@@ -88,6 +88,17 @@ def safe_https_url(value: str, base_host: str | None = None) -> str | None:
     return urllib.parse.urlunparse(parsed._replace(fragment=""))
 
 
+def school_https_root(value: str) -> tuple[str | None, str | None]:
+    try:
+        parsed = urllib.parse.urlparse(value)
+        base_host = parsed.hostname
+    except ValueError:
+        return None, None
+    if parsed.scheme == "http":
+        value = urllib.parse.urlunparse(parsed._replace(scheme="https"))
+    return safe_https_url(value, base_host), base_host
+
+
 def require_public_host(host: str) -> None:
     """Reject literal or DNS-resolved non-public destinations before connecting."""
     try:
@@ -378,8 +389,7 @@ class Fetcher:
 
 def capture_school(school: dict[str, Any], fetcher: Fetcher, target_year: int = TARGET_YEAR) -> dict[str, Any]:
     website = school.get("website", "")
-    base_host = urllib.parse.urlparse(website).hostname
-    root = safe_https_url(website, base_host)
+    root, base_host = school_https_root(website)
     base = {**school, "target_entry_year": target_year, "checked_at": now(), "review_status": "REVIEW_REQUIRED", "publication_status": "UNPUBLISHED"}
     if not root or not base_host:
         return {**base, "discovery_status": "NOT_FOUND", "reason": "NO_APPROVED_HTTPS_SCHOOL_WEBSITE", "pages": [], "fields": field_states([], 0, target_year)}
