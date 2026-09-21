@@ -88,10 +88,11 @@ FEE_KIND_TERMS = {
     "postage": ("郵費", "郵票", "回郵", "郵寄", "郵資", "postage", "mail"),
     "application": ("報名費", "申請費", "報名表費"),
     "registration": ("註冊費", "登記費", "留位費"),
-    "meal": ("膳食", "午膳", "午餐", "茶點", "飯費", "餐費"),
-    "tuition": ("學費", "學券", "學期", "每月", "全年", "月費"),
+    "meal": ("膳食", "膳費", "午膳", "午餐", "茶點", "飯費", "餐費"),
+    "tuition": ("學費", "學券", "月費", "tuition"),
 }
 NON_TUITION_FEE_KINDS = {"application", "registration", "postage"}
+NON_ADMISSION_FORM_TERMS = ("開放日", "體驗日", "遊戲日", "暫託")
 DATE_RE = re.compile(r"(?:\d{4}年\d{1,2}月\d{1,2}日|\d{1,2}[./-]\d{1,2}[./-]\d{4})")
 TIME_RE = re.compile(r"(?:[01]?\d|2[0-3])(?::|時)[0-5]?\d(?:分)?")
 MONEY_RE = re.compile(r"(?:HK\$|港幣|港元|\$)\s*[\d,]+(?:\.\d{1,2})?")
@@ -443,7 +444,10 @@ def _application_hour_kind(line: str, window: str) -> str | None:
 
 def _is_form_link(label: str, href: str) -> bool:
     text = f"{label} {href}".casefold()
-    return any(term.casefold() in text for term in FORM_LINK_TERMS if term != "form") or re.search(r"(?<![a-z])forms?(?![a-z])", text) is not None
+    return not _has_term(text, NON_ADMISSION_FORM_TERMS) and (
+        any(term.casefold() in text for term in FORM_LINK_TERMS if term != "form")
+        or re.search(r"(?<![a-z])forms?(?![a-z])", text) is not None
+    )
 
 
 def _is_root_url(value: str) -> bool:
@@ -470,16 +474,22 @@ def extract_facts(text: str, url: str, links: Iterable[tuple[str, str]] = (), ta
                 facts["hours"].append(_evidence("hours", line, url, target, target_year))
             elif (hour_kind := _application_hour_kind(line, window)) is not None:
                 facts["application"].append(_evidence("application_submission_hours", line, url, target, target_year, hour_kind=hour_kind))
-        if MONEY_RE.search(line) and any(term in window for term in FIELD_TERMS["fees"]):
-            kind = _fee_kind(line)
+        kind = _fee_kind(line)
+        if (MONEY_RE.search(line) or (kind == "tuition" and any(term in line for term in ("全免", "免費")))) and any(term in window for term in FIELD_TERMS["fees"]):
+            fee_year = next((
+                lines[position]
+                for position in range(index, max(-1, index - 8), -1)
+                if SCHOOL_YEAR_RE.search(urllib.parse.unquote(html.unescape(lines[position])))
+            ), "")
+            fee_target = is_target_year(f"{fee_year} {line}", target_year)
             if kind in {"tuition", "meal"}:
-                facts["fees"].append(_evidence("fees", line, url, target, target_year, fee_kind=kind))
+                facts["fees"].append(_evidence("fees", line, url, fee_target, target_year, fee_kind=kind))
             elif kind in NON_TUITION_FEE_KINDS or any(term in window for term in FIELD_TERMS["application"]):
                 facts["application"].append(_evidence("application_step", line, url, target, target_year, fee_kind=kind) if kind else _evidence("application_step", line, url, target, target_year))
         if any(term in window for term in FIELD_TERMS["application"]) and not dates and not any(term in line for term in GENERIC_GUIDANCE):
             if any(action in line for action in ("遞交", "提交", "填寫", "登記", "報名", "申請", "文件")):
                 facts["application"].append(_evidence("application_step", line, url, target, target_year))
-        if "form" in fields and any(term in line for term in ("表格", "下載", "網上", "online")):
+        if "form" in fields and not _has_term(line, NON_ADMISSION_FORM_TERMS) and any(term in line for term in ("表格", "下載", "網上", "online")):
             facts["form"].append(_evidence("form_reference", line, url, target, target_year))
     page_url = url
     base_host = urllib.parse.urlparse(page_url).hostname
