@@ -29,10 +29,11 @@ export function costs(rows:FeeRow[],grade:string,session:string):{rows:FeeRow[];
 }
 export function feePeriod(date:string|undefined,year:number):string {return date?`${date} 起生效；${Number(date.slice(0,4))===year?'請確認目標學年仍適用':'不是 '+year+'/'+String(year+1).slice(-2)+' 已確認報價'}`:'尚未取得可計算的同校址收費文件';}
 export function feeCard(s:KGSummary,grade:string,session:string,year:number):{value:string;detail:string} {
- const c=costs(s.tuition_rows,grade,session);if(c.subtotal!==null)return {value:money(c.subtotal)+'／年，已知小計',detail:feePeriod(s.fee_effective_from,year)};
- const className=grade+' '+(sessions[session]??session),period=feePeriod(s.fee_effective_from,year);
+ const c=costs(s.tuition_rows,grade,session),className=grade+' '+(sessions[session]??session),period=feePeriod(s.fee_effective_from,year),sameYear=Number(s.fee_effective_from?.slice(0,4))===year;
+ if(c.subtotal!==null&&sameYear)return {value:money(c.subtotal)+'／年，已知小計',detail:period};
+ const discovered=year===2027?sourceAnswer(s,'fees'):null;if(discovered){const reference=c.subtotal!==null?`另有非目標學年的已知小計 ${money(c.subtotal)}／年；${period}。`:s.fee_status==='LAYOUT_REVIEW'?`另有 ${period.replace('；','文件；版面待覆核，暫未能計算 '+className+'小計；')}。`:'';return {value:discovered.value,detail:discovered.detail+(reference?' '+reference:'')}}
+ if(c.subtotal!==null)return {value:money(c.subtotal)+'／年，已知小計',detail:period};
  if(s.fee_status==='LAYOUT_REVIEW')return {value:'收費文件版面待覆核',detail:`已取得 ${period.replace('；','文件；版面待覆核，暫未能計算 '+className+'小計；')}`};
- const discovered=year===2027?sourceAnswer(s,'fees'):null;if(discovered)return {value:discovered.value,detail:discovered.detail};
  return {value:`未有 ${className}可核對小計`,detail:s.fee_effective_from?period+'；文件未有此班別通過核對的學費資料。':period};
 }
 export function admissionCard(s:KGSummary,grade:string,year:number):{value:string;detail:string} {
