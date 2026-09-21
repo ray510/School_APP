@@ -1,6 +1,6 @@
 # Worker 與 API 責任劃分計劃
 
-狀態：規劃已建立，尚未實作新 API。本文固定每個 Cloudflare Worker、公開 hostname、資料儲存及部署 workflow 的責任，避免正式幼稚園資料誤接測試 D1，或由多個 Worker 爭用同一 hostname。
+狀態：milestone 1 已完成本機實作及自動測試；GitHub merge、指定 school-source artifact、production deploy 及 live acceptance 尚待完成。本文固定每個 Cloudflare Worker、公開 hostname、資料儲存及部署 workflow 的責任，避免正式幼稚園資料誤接測試 D1，或由多個 Worker 爭用同一 hostname。
 
 ## 決定
 
@@ -68,14 +68,14 @@
 
 ## Action items
 
-- [ ] 在 `apps/worker/src/production.ts` 接入幼稚園只讀 routes；如路由邏輯令入口過長，只抽出一個 asset-backed handler，禁止建立通用 repository／service 層。
-- [ ] 從 `ASSETS` 先讀及驗證 `kg-parent-manifest.json`，再只讀 manifest 指向的 versioned index 或 school JSON。
-- [ ] 實作嚴格 query、ID、limit、cursor 及 response shape 驗證；錯誤回應保留 request ID，不回傳內部 exception 或 asset path。
-- [ ] 把 `KGParentPage.vue` 的列表改為 API 篩選及分頁，保留「再顯示 12 間」、總結果數、最多四校比較及 URL query 行為。
-- [ ] 以 `ids` mode 解析 IndexedDB 私人清單中的 school／alias IDs；私人筆記、兒童資料及進度不得放入 API、query string、log 或 analytics。
-- [ ] 將單校及比較頁改用 detail API；每次仍核對 canonical ID、bundle ID 及請求世代，避免舊請求覆蓋新頁面。
-- [ ] 保留現有靜態 JSON、ZIP、hash 及 verifier 作 source of truth、審計及 rollback；API 只是讀取投影。
-- [ ] 更新 production Playwright、Worker unit tests、HTTP integration tests 及部署 verifier。
+- [x] 在 `apps/worker/src/production.ts` 接入幼稚園只讀 routes；如路由邏輯令入口過長，只抽出一個 asset-backed handler，禁止建立通用 repository／service 層。
+- [x] 從 `ASSETS` 先讀及驗證 `kg-parent-manifest.json`，再只讀 manifest 指向的 versioned index 或 school JSON。
+- [x] 實作嚴格 query、ID、limit、cursor 及 response shape 驗證；錯誤回應保留 request ID，不回傳內部 exception 或 asset path。
+- [x] 把 `KGParentPage.vue` 的列表改為 API 篩選及分頁，保留「再顯示 12 間」、總結果數、最多四校比較及 URL query 行為。
+- [x] 以 `ids` mode 解析 IndexedDB 私人清單中的 school／alias IDs；私人筆記、兒童資料及進度不得放入 API、query string、log 或 analytics。
+- [x] 將單校及比較頁改用 detail API；每次仍核對 canonical ID、bundle ID 及請求世代，避免舊請求覆蓋新頁面。
+- [x] 保留現有靜態 JSON、ZIP、hash 及 verifier 作 source of truth、審計及 rollback；API 只是讀取投影。
+- [x] 更新 production Playwright、Worker unit tests、HTTP integration tests 及部署 verifier。
 - [ ] 經 GitHub PR、CI、merge 後，只使用指定的成功 school-source run artifact 發佈 production；取消沒有該 artifact 的自動 release。
 - [ ] 部署後核對 commit、Cloudflare Worker Version ID、bundle ID、1,025 個唯一 ID、`NOT_RUN=0`、API 分頁總數、desktop/mobile journeys 及 D1 writes `0`。
 
