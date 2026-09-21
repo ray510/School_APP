@@ -2,7 +2,7 @@
 
 ## 2026-09-21 2027/28 幼稚園逐校公告發現流程（本分支，尚未上線）
 
-分支 `codex/kg-2027-school-sources` 加入明確、獨立的 `kg-parent-school-sources.yml` source job。它從現有 1,025 張幼稚園家長卡建立完整 scope，逐校只在已登記官方學校網域及教育局核准 host 內，以每校最多 6 頁、單 host 串行、有限重試、文件／總 bytes 上限及 HTTPS redirect 檢查進行 discovery/capture。原始頁面及文字只作 CI artifact，不提交 Git；manifest 保存 URL、checked/captured time、target entry year、reference period、evidence excerpt、content hash、capture status、review status 及 publication status。
+分支 `codex/kg-2027-school-sources` 加入明確、獨立的 `kg-parent-school-sources.yml` source job；相關 source 程式合併到 `release/full-catalog` 後會自動執行，亦保留人工重跑入口。它從現有 1,025 張幼稚園家長卡建立完整 scope，逐校只在已登記官方學校網域及教育局核准 host 內，以每校最多 6 頁、單 host 串行、有限重試、文件／總 bytes 上限及 HTTPS redirect 檢查進行 discovery/capture。原始頁面及文字只作 CI artifact，不提交 Git；manifest 保存 URL、checked/captured time、target entry year、reference period、evidence excerpt、content hash、capture status、review status 及 publication status。
 
 builder 可選擇讀取 `captured-parent/school-sources/manifest.json`，並把四個優先欄位（報名日期／步驟、表格 URL、校本費用、上課／班別時間）的 `CANDIDATE`、`REVIEW`、`FETCH_FAILED`、`NOT_FOUND` 或 `NOT_RUN` 狀態接通家長卡；未經人工身份、學年、欄位及內容覆核不會進入已確認 facts。JEV evidence block 亦會排除「請瀏覽學校網頁」及同類 generic guidance，原有年度概覽文字仍只在來源詳情保留。
 
