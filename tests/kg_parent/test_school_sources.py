@@ -74,6 +74,106 @@ class SchoolSources(unittest.TestCase):
         self.assertEqual(len(facts["application"]), 1)
         self.assertIn("2026年9月1日", facts["application"][0]["evidence_excerpt"])
 
+    def test_form_link_year_is_local_and_unrelated_links_are_excluded(self):
+        facts = extract_facts(
+            "2027/28 K1 招生公告\n其他內容",
+            "https://school.example/",
+            links=[
+                ("/gallery/71", "K1 校園活動"),
+                ("/", "2027/28 申請表"),
+                ("/?section=forms", "2027/28 申請表"),
+                ("#tab-fee", "2027/28 申請表"),
+                ("/forms/k1-application-form.pdf", "K1 申請表"),
+                ("/forms/2027-2028-application-form.pdf", "K1 申請表"),
+                ("/forms/2026-2027-application-form.pdf", "2026/27 申請表"),
+            ],
+        )
+
+        self.assertEqual(
+            [e["value"] for e in facts["form"]],
+            [
+                "https://school.example/forms/k1-application-form.pdf",
+                "https://school.example/forms/2027-2028-application-form.pdf",
+                "https://school.example/forms/2026-2027-application-form.pdf",
+            ],
+        )
+        self.assertIsNone(facts["form"][0]["target_year"])
+        self.assertEqual(facts["form"][1]["target_year"], 2027)
+        self.assertIsNone(facts["form"][2]["target_year"])
+        no_year_form = {"form": [facts["form"][0]]}
+        self.assertEqual(field_states([{"facts": no_year_form}], 0)["form"]["status"], "REVIEW")
+
+    def test_submission_and_office_times_are_application_evidence_not_class_hours(self):
+        facts = extract_facts(
+            "2027/28 K1 招生公告\n"
+            "上課時間：全日班 09:00至16:30\n"
+            "其他說明\n"
+            "收表時間：星期六 09:00至13:00\n"
+            "辦公時間：星期一 09:00至17:00",
+            "https://school.example/admission",
+        )
+
+        self.assertEqual([e["value"] for e in facts["hours"]], ["上課時間：全日班 09:00至16:30"])
+        self.assertEqual(
+            {e["hour_kind"] for e in facts["application"] if e["field"] == "application_submission_hours"},
+            {"submission", "office"},
+        )
+
+    def test_fee_kind_keeps_non_tuition_amounts_out_of_fee_candidates(self):
+        facts = extract_facts(
+            "2027/28 K1 收生\n"
+            "報名費 $40\n"
+            "註冊費 $1,570\n"
+            "回郵信封及 $2.4 郵票\n"
+            "其他費用 $100\n"
+            "學費 HK$10,000\n"
+            "膳食 HK$800",
+            "https://school.example/admission",
+        )
+
+        self.assertEqual({e["fee_kind"] for e in facts["fees"]}, {"tuition", "meal"})
+        self.assertEqual(
+            {e["fee_kind"] for e in facts["application"] if "fee_kind" in e},
+            {"application", "registration", "postage"},
+        )
+        self.assertNotIn("其他費用 $100", [e["value"] for e in facts["fees"]])
+        non_tuition = extract_facts("2027/28 K1 收生\n報名費 $40", "https://school.example/admission")
+        self.assertEqual(field_states([{"facts": non_tuition}], 0)["fees"]["status"], "NOT_FOUND")
+
+    def test_evidence_is_deduplicated_and_target_evidence_is_displayed_first(self):
+        facts = extract_facts(
+            "2026/27 K1 學費 HK$10,000\n其他\n其他\n2027/28 K1 學費 HK$11,000",
+            "https://school.example/admission/",
+        )
+        duplicate = dict(facts["fees"][-1], url="https://school.example/admission/")
+        states = field_states([{"facts": {"fees": facts["fees"] + [duplicate]}}], 0)
+
+        self.assertEqual(states["fees"]["total_evidence_count"], 2)
+        self.assertEqual(states["fees"]["target_evidence_count"], 1)
+        self.assertEqual(states["fees"]["evidence_count"], 2)
+        self.assertEqual(len(states["fees"]["evidence"]), 2)
+        self.assertEqual(states["fees"]["evidence"][0]["target_year"], 2027)
+
+    def test_capture_skips_duplicate_root_urls_after_canonicalization(self):
+        class FakeFetcher:
+            def __init__(self):
+                self.calls = []
+
+            def fetch(self, url, base_host):
+                self.calls.append(url)
+                if len(self.calls) == 1:
+                    return {
+                        "url": "https://school.example",
+                        "capture_status": "CAPTURED",
+                        "facts": {},
+                        "discovered_links": ["https://school.example/", "https://school.example/admission/"],
+                    }
+                return {"url": url, "capture_status": "CAPTURED", "facts": {}, "discovered_links": []}
+
+        fetcher = FakeFetcher()
+        capture_school({"school_id": "school", "name": "甲幼稚園", "address": "甲街", "website": "https://school.example/"}, fetcher)
+        self.assertEqual(fetcher.calls, ["https://school.example/", "https://school.example/admission"])
+
     def test_prior_year_is_review_not_target_candidate(self):
         facts = extract_facts("2026/27 K1 學費 HK$10,000；上課時間 09:00 至 13:00", "https://school.example/")
         states = field_states([{"facts": facts}], 0)
