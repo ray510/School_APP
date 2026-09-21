@@ -345,6 +345,7 @@ def html_text(raw: bytes, content_type: str = "") -> str:
 
 
 def is_target_year(text: str, target_year: int = TARGET_YEAR) -> bool:
+    text = urllib.parse.unquote(html.unescape(text))
     starts = {
         start
         for match in SCHOOL_YEAR_RE.finditer(text)
