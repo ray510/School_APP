@@ -1,5 +1,15 @@
 # Implementation status — 2026-09-21
 
+## 2026-09-21 2027/28 幼稚園逐校公告發現流程（本分支，尚未上線）
+
+分支 `codex/kg-2027-school-sources` 加入明確、獨立的 `kg-parent-school-sources.yml` source job；相關 source 程式合併到 `release/full-catalog` 後會自動執行，亦保留人工重跑入口。它從現有 1,025 張幼稚園家長卡建立完整 scope，逐校只在已登記官方學校網域及教育局核准 host 內，以每校最多 6 頁、單 host 串行、有限重試、文件／總 bytes 上限及 HTTPS redirect 檢查進行 discovery/capture。原始頁面及文字只作 CI artifact，不提交 Git；manifest 保存 URL、checked/captured time、target entry year、reference period、evidence excerpt、content hash、capture status、review status 及 publication status。
+
+builder 可選擇讀取 `captured-parent/school-sources/manifest.json`，並把四個優先欄位（報名日期／步驟、表格 URL、校本費用、上課／班別時間）的 `CANDIDATE`、`REVIEW`、`FETCH_FAILED`、`NOT_FOUND` 或 `NOT_RUN` 狀態接通家長卡；未經人工身份、學年、欄位及內容覆核不會進入已確認 facts。JEV evidence block 亦會排除「請瀏覽學校網頁」及同類 generic guidance，原有年度概覽文字仍只在來源詳情保留。
+
+本分支只完成程式、測試及手動 source-job wiring；`school_sources` live capture、人工 review、production merge/deploy、Cloudflare remote write 仍為 `LIVE_NOT_RUN`／`NOT_RUN`。因此不能宣稱 1,025 間已有 2027/28 日期、表格、費用或時間；沒有 evidence 的學校仍會明確顯示未執行、未找到、擷取失敗或待覆核狀態。CodeGraph 未經授權初始化，本輪按要求以 direct-file inspection 作 fallback。
+
+本分支經主代理重跑的離線驗證使用 Node `24.19.0`、pnpm `10.28.0` 及 Python `3.12.14`：`pnpm typecheck`、`pnpm lint`、70 個 regression、182 個 Vitest、21 個 Python KG tests、Python `py_compile`、source-job `--help` 及 production Vite build 均為 `PASS`。主代理 review 另修正 PDF 不再誤作 HTML link discovery、redirect／DNS 在連線前拒絕非公開位址、Big5 頁面解碼，以及 `FETCH_FAILED`／`NOT_FOUND` 不覆蓋既有已核對事件或收費狀態。local workerd／desktop-mobile Playwright 為 `NOT_RUN`：此 clean worktree 沒有 parent release 所需的 `apps/web/dist-production/kg-parent-manifest.json`、完整 base catalog 或 `artifacts/production/wrangler.production.json`；不以現行 production 站或不完整資料冒充本分支 real-data acceptance。
+
 ## 2026-09-21 幼稚園家長卡片證據修正（已上線）
 
 PR [#6](https://github.com/ray510/HK_APP/pull/6) 已合併為 `c181f7b961e87066ba0c7d30b22bcede729e5b9f`。正式發布 run [35560491932](https://github.com/ray510/HK_APP/actions/runs/35560491932) 的 `prepare` 及 `publish` 均為 `completed / success`，Cloudflare Worker Version ID 為 `0c7fa2b7-10d9-4281-b138-ac0541307378`，部署結果為 `LIVE_VERIFIED`。獨立正式站 Playwright 驗收共 34 項，全部通過。

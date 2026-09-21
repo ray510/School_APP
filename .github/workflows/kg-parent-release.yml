@@ -10,6 +10,11 @@ on:
         type: choice
         options: [reuse, fresh]
         default: reuse
+      school_sources_run_id:
+        description: Optional completed school-source discovery run ID to review into this release
+        type: string
+        required: false
+        default: ''
 permissions:
   contents: read
   actions: read
@@ -44,6 +49,13 @@ jobs:
           github-token: ${{ github.token }}
           path: captured-parent
           merge-multiple: true
+      - uses: actions/download-artifact@v7
+        if: inputs.school_sources_run_id != ''
+        with:
+          name: kg-parent-school-sources-${{ inputs.school_sources_run_id }}
+          run-id: ${{ inputs.school_sources_run_id }}
+          github-token: ${{ github.token }}
+          path: captured-parent/school-sources
       - name: New parent UI, unchanged existing data, explicit source facts
         run: |
           pnpm --filter @hk-school/web exec vite build --config vite.production.config.ts

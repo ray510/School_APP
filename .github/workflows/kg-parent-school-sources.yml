@@ -1,0 +1,44 @@
+name: Kindergarten 2027 school source discovery
+on:
+  push:
+    branches: [release/full-catalog]
+    paths: [.github/workflows/kg-parent-school-sources.yml, scripts/kg_parent/school_sources.py, scripts/kg-parent-school-sources.py, tests/kg_parent/test_school_sources.py]
+  workflow_dispatch:
+    inputs:
+      target_year:
+        description: Target kindergarten entry year; this reviewed cycle accepts only 2027
+        required: true
+        default: '2027'
+        type: string
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: kg-parent-school-sources-${{ inputs.target_year || '2027' }}
+  cancel-in-progress: false
+jobs:
+  discover-and-capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v5
+        with: {persist-credentials: false}
+      - uses: actions/download-artifact@v7
+        with:
+          artifact-ids: '10587380247'
+          run-id: '35450856763'
+          github-token: ${{ github.token }}
+          path: base
+          merge-multiple: true
+      - name: Install text-only PDF extraction
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils
+      - name: Validate full KG scope without network
+        run: python scripts/kg-parent-school-sources.py --target-year "${{ inputs.target_year || '2027' }}" --base base/apps/web/dist-production --out captured-parent/school-sources --plan-only
+      - name: Bounded official school source discovery and capture
+        run: python scripts/kg-parent-school-sources.py --target-year "${{ inputs.target_year || '2027' }}" --base base/apps/web/dist-production --out captured-parent/school-sources
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: kg-parent-school-sources-${{ github.run_id }}
+          path: captured-parent/school-sources
+          retention-days: 90

@@ -1,6 +1,11 @@
 """Deterministic facts; the model never creates amounts, opening times or deadlines."""
 import re,unicodedata,decimal,datetime
 
+GENERIC_GUIDANCE=(
+ '請瀏覽學校網頁','請參閱學校網頁','請向學校查詢','先查目標學年校方公告',
+ '瀏覽學校網頁','參閱學校網頁','向學校查詢',
+)
+
 def norm(v):return re.sub(r'[\s，,。.;；()（）\-]','',unicodedata.normalize('NFKC',v)).upper()
 def amount(v):
  if 'FREE' in v:return 0
@@ -44,3 +49,6 @@ def certificate(text,name,address,school_number_match=False):
 
 def source_fact(value,field,profile):
  return {'value':value,'field':field,'source_id':profile['source_id'],'edition':profile['edition'],'row':profile['row'],'record_sha256':profile['record_sha256'],'state':'REPORTED' if str(value).strip() not in ('','-','N.A.') else 'UNKNOWN'}
+
+def is_generic_guidance(value):
+ return any(phrase in str(value) for phrase in GENERIC_GUIDANCE)
