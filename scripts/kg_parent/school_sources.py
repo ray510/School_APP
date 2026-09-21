@@ -99,6 +99,7 @@ GENERIC_GUIDANCE = (
     "請瀏覽學校網頁", "請參閱學校網頁", "請向學校查詢", "先查目標學年校方公告",
     "瀏覽學校網頁", "參閱學校網頁", "向學校查詢",
 )
+SCHOOL_YEAR_RE = re.compile(r"(?<!\d)(?:(20\d{2})|(\d{2}))\s*(?:/|至|-|–|—)\s*(?:(20\d{2})|(\d{2}))(?!\d)")
 
 
 def now() -> str:
@@ -344,8 +345,13 @@ def html_text(raw: bytes, content_type: str = "") -> str:
 
 
 def is_target_year(text: str, target_year: int = TARGET_YEAR) -> bool:
-    next_year = target_year + 1
-    return bool(re.search(rf"{target_year}\s*(?:/|至|-|–|—)\s*(?:{next_year}|{str(next_year)[-2:]})(?!\d)", text))
+    starts = {
+        start
+        for match in SCHOOL_YEAR_RE.finditer(text)
+        for start, end in [(int(match.group(1) or f"20{match.group(2)}"), int(match.group(3) or f"20{match.group(4)}"))]
+        if end == start + 1
+    }
+    return starts == {target_year}
 
 
 def _field_for(text: str) -> list[str]:
