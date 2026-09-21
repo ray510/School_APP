@@ -17,8 +17,9 @@ import socket
 import subprocess
 import time
 import urllib.parse
+import urllib.error
 import urllib.request
-from collections import defaultdict
+from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from html.parser import HTMLParser
 from typing import Any, Iterable
@@ -30,8 +31,24 @@ MAX_DOCUMENT_BYTES = 2_000_000
 MAX_TOTAL_BYTES = 1_200_000_000
 RETRIES = 2
 MIN_HOST_INTERVAL_SECONDS = 0.35
+MAX_FAILURE_URL_LENGTH = 2_048
 FIELD_NAMES = ("application", "form", "fees", "hours")
 SOURCE_STATUSES = {"NOT_RUN", "CANDIDATE", "REVIEW", "FETCH_FAILED", "NOT_FOUND", "PUBLISHED"}
+FAILURE_REASON_MESSAGES = {
+    "UNAPPROVED_URL": "URL 不在核准來源範圍",
+    "HOST_RESOLUTION_FAILED": "來源主機無法解析",
+    "NON_PUBLIC_HOST": "來源主機不是公開網絡位址",
+    "UNAPPROVED_REDIRECT": "重新導向離開核准來源範圍",
+    "DOCUMENT_SIZE_LIMIT": "文件超過大小上限",
+    "CAPTURE_BYTE_BUDGET": "擷取總容量已達上限",
+    "PDF_TEXT_EXTRACTION_FAILED": "PDF 文字擷取失敗",
+    "HTTP_4XX": "來源回應用戶端錯誤",
+    "HTTP_5XX": "來源回應伺服器錯誤",
+    "TIMEOUT": "來源連線逾時",
+    "NETWORK_ERROR": "來源網絡連線失敗",
+    "UNKNOWN_ERROR": "來源擷取發生未分類錯誤",
+}
+SENSITIVE_QUERY_KEY = re.compile(r"(?:token|secret|password|passwd|api[_-]?key|auth|signature|sig|credential)", re.I)
 RELEVANT_TERMS = (
     "2027", "2028", "2027/28", "2027/2028", "幼兒班", "K1", "入學", "收生", "報名",
     "申請", "學費", "費用", "上課", "時間", "時段", "表格", "下載", "online", "online form",
@@ -65,6 +82,54 @@ def content_sha256(raw: bytes) -> str:
 
 def document_key(raw: bytes, is_pdf: bool) -> str:
     return f"{content_sha256(raw)}-{'pdf' if is_pdf else 'html'}"
+
+
+def checked_url(value: str | None) -> str:
+    """Return a bounded checked URL without credentials or sensitive query values."""
+    raw = str(value or "")
+    try:
+        parsed = urllib.parse.urlparse(raw)
+        hostname = parsed.hostname
+        if not parsed.scheme or not hostname:
+            return raw[:MAX_FAILURE_URL_LENGTH]
+        authority = hostname
+        if parsed.port is not None:
+            authority = f"{authority}:{parsed.port}"
+        query = urllib.parse.urlencode([
+            (key, "[REDACTED]" if SENSITIVE_QUERY_KEY.search(key) else query_value)
+            for key, query_value in urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+        ])
+        safe = parsed._replace(netloc=authority, query=query, fragment="")
+        return urllib.parse.urlunparse(safe)[:MAX_FAILURE_URL_LENGTH]
+    except (TypeError, ValueError):
+        return raw[:MAX_FAILURE_URL_LENGTH]
+
+
+def failure_reason(exc: BaseException | str | None) -> tuple[str, str]:
+    """Map implementation errors to stable, non-secret UI/status values."""
+    raw = exc if isinstance(exc, str) else str(exc or "")
+    if raw in FAILURE_REASON_MESSAGES:
+        return raw, FAILURE_REASON_MESSAGES[raw]
+    if isinstance(exc, urllib.error.HTTPError):
+        return ("HTTP_4XX" if 400 <= exc.code < 500 else "HTTP_5XX" if exc.code >= 500 else "NETWORK_ERROR"), FAILURE_REASON_MESSAGES["HTTP_4XX" if 400 <= exc.code < 500 else "HTTP_5XX" if exc.code >= 500 else "NETWORK_ERROR"]
+    if isinstance(exc, (TimeoutError, socket.timeout)):
+        return "TIMEOUT", FAILURE_REASON_MESSAGES["TIMEOUT"]
+    if isinstance(exc, urllib.error.URLError):
+        return "NETWORK_ERROR", FAILURE_REASON_MESSAGES["NETWORK_ERROR"]
+    if isinstance(exc, subprocess.CalledProcessError):
+        return "PDF_TEXT_EXTRACTION_FAILED", FAILURE_REASON_MESSAGES["PDF_TEXT_EXTRACTION_FAILED"]
+    return "UNKNOWN_ERROR", FAILURE_REASON_MESSAGES["UNKNOWN_ERROR"]
+
+
+def failure_provenance(page: dict[str, Any]) -> dict[str, str]:
+    """Keep only bounded failure metadata; a failed fetch is never evidence."""
+    code, message = failure_reason(page.get("reason_code") or page.get("reason"))
+    return {
+        "checked_url": checked_url(page.get("checked_url") or page.get("url")),
+        "checked_at": str(page.get("checked_at") or now())[:64],
+        "reason_code": code,
+        "reason": message,
+    }
 
 
 def approved_hosts(base_host: str | None) -> set[str]:
@@ -332,13 +397,25 @@ class Fetcher:
         self.total_bytes = 0
         self.total_lock = threading.Lock()
 
+    def failed(self, url: str, reason: BaseException | str) -> dict[str, Any]:
+        code, message = failure_reason(reason)
+        checked = checked_url(url)
+        return {
+            "url": checked,
+            "checked_url": checked,
+            "capture_status": "FETCH_FAILED",
+            "reason_code": code,
+            "reason": message,
+            "checked_at": now(),
+        }
+
     def fetch(self, url: str, base_host: str) -> dict[str, Any]:
         safe = safe_https_url(url, base_host)
         if not safe:
-            return {"url": url, "capture_status": "FETCH_FAILED", "reason": "UNAPPROVED_URL"}
+            return self.failed(url, "UNAPPROVED_URL")
         host = normalized_host(urllib.parse.urlparse(safe).hostname)
         with self.host_locks[host]:
-            last = "UNKNOWN"
+            last: BaseException | str = "UNKNOWN_ERROR"
             for attempt in range(1, RETRIES + 1):
                 try:
                     require_public_host(urllib.parse.urlparse(safe).hostname or "")
@@ -386,10 +463,10 @@ class Fetcher:
                         "review_status": "REVIEW_REQUIRED", "publication_status": "UNPUBLISHED",
                     }
                 except Exception as exc:  # explicit source jobs retain failure state and continue other schools
-                    last = f"{type(exc).__name__}:{str(exc)[:200]}"
+                    last = exc
                     if attempt < RETRIES:
                         time.sleep(0.25 * attempt)
-            return {"url": safe, "capture_status": "FETCH_FAILED", "reason": last, "checked_at": now()}
+            return self.failed(safe, last)
 
 
 def capture_school(school: dict[str, Any], fetcher: Fetcher, target_year: int = TARGET_YEAR) -> dict[str, Any]:
@@ -397,19 +474,22 @@ def capture_school(school: dict[str, Any], fetcher: Fetcher, target_year: int = 
     root, base_host = school_https_root(website)
     base = {**school, "target_entry_year": target_year, "checked_at": now(), "review_status": "REVIEW_REQUIRED", "publication_status": "UNPUBLISHED"}
     if not root or not base_host:
-        return {**base, "discovery_status": "NOT_FOUND", "reason": "NO_APPROVED_HTTPS_SCHOOL_WEBSITE", "pages": [], "fields": field_states([], 0, target_year)}
+        return {**base, "discovery_status": "NOT_FOUND", "reason": "NO_APPROVED_HTTPS_SCHOOL_WEBSITE", "pages": [], "fetch_failures": [], "fields": field_states([], 0, target_year)}
     first = fetcher.fetch(root, base_host)
     pages = [first] if first.get("capture_status") == "CAPTURED" else []
-    failures = 0 if pages else 1
+    fetch_failures = [] if pages else [failure_provenance(first)]
+    failures = len(fetch_failures)
     if pages:
         for url in first.get("discovered_links", [])[:MAX_PAGES_PER_SCHOOL - 1]:
             page = fetcher.fetch(url, base_host)
             if page.get("capture_status") == "CAPTURED": pages.append(page)
-            else: failures += 1
+            else:
+                fetch_failures.append(failure_provenance(page))
+                failures += 1
     fields = field_states(pages, failures, target_year)
     statuses = [x["status"] for x in fields.values()]
     discovery = "CANDIDATE" if any(x == "CANDIDATE" for x in statuses) else "REVIEW" if pages else "FETCH_FAILED"
-    return {**base, "discovery_status": discovery, "identity_status": "CANDIDATE", "pages": pages, "fields": fields}
+    return {**base, "discovery_status": discovery, "identity_status": "CANDIDATE", "pages": pages, "fetch_failures": fetch_failures, "fields": fields}
 
 
 def run(base: pathlib.Path, out: pathlib.Path, target_year: int = TARGET_YEAR, plan_only: bool = False, parent_inputs: pathlib.Path | None = None) -> dict[str, Any]:
@@ -417,16 +497,24 @@ def run(base: pathlib.Path, out: pathlib.Path, target_year: int = TARGET_YEAR, p
     if len(schools) != 1025:
         raise ValueError(f"Unexpected KG scope: {len(schools)}")
     if plan_only:
-        result = {"schema": SCHEMA, "target_entry_year": target_year, "scope": "ALL_KG_PARENT_CARDS", "school_count": len(schools), "schools": schools, "capture_status": "PLAN_ONLY"}
+        result = {"schema": SCHEMA, "target_entry_year": target_year, "scope": "ALL_KG_PARENT_CARDS", "school_count": len(schools), "fetch_failure_count": 0, "fetch_failure_reason_counts": {}, "schools": schools, "capture_status": "PLAN_ONLY"}
         out.mkdir(parents=True, exist_ok=True); (out / "manifest.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf8"); return result
     out.mkdir(parents=True, exist_ok=True)
     fetcher = Fetcher(out)
     with ThreadPoolExecutor(max_workers=3) as pool:
         records = list(pool.map(lambda school: capture_school(school, fetcher, target_year), schools))
+    reason_counts = Counter(
+        failure["reason_code"]
+        for school in records
+        for failure in school.get("fetch_failures", [])
+    )
+    failure_count = sum(reason_counts.values())
     result = {
         "schema": SCHEMA, "target_entry_year": target_year, "scope": "ALL_KG_PARENT_CARDS",
         "school_count": len(records), "captured_school_count": sum(bool(s["pages"]) for s in records),
         "candidate_school_count": sum(s["discovery_status"] == "CANDIDATE" for s in records),
+        "fetch_failure_count": failure_count,
+        "fetch_failure_reason_counts": dict(sorted(reason_counts.items())),
         "checked_at": now(), "capture_status": "CAPTURED_WITH_EXPLICIT_GAPS", "schools": records,
         "policy": {"max_pages_per_school": MAX_PAGES_PER_SCHOOL, "max_document_bytes": MAX_DOCUMENT_BYTES, "retries": RETRIES, "official_hosts_only": True},
     }

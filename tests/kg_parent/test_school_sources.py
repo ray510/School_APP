@@ -7,14 +7,17 @@ from unittest.mock import patch
 from scripts.kg_parent.build import reuse_profile_results
 from scripts.kg_parent.school_sources import (
     content_sha256,
+    capture_school,
     decode_html,
     document_key,
     discover_links,
     extract_facts,
+    Fetcher,
     field_states,
     is_target_year,
     read_base_schools,
     require_public_host,
+    run,
     safe_https_url,
     school_https_root,
 )
@@ -86,6 +89,57 @@ class SchoolSources(unittest.TestCase):
     def test_document_path_changes_with_captured_bytes(self):
         self.assertNotEqual(document_key(b"first", False), document_key(b"changed", False))
         self.assertNotEqual(document_key(b"first", False), document_key(b"first", True))
+
+    def test_root_fetch_failure_is_provenance_not_a_page_or_evidence(self):
+        class FailedFetcher:
+            def fetch(self, url, base_host):
+                return {
+                    "url": "https://school.example/admission?token=secret",
+                    "capture_status": "FETCH_FAILED",
+                    "reason_code": "HOST_RESOLUTION_FAILED",
+                    "reason": "raw secret should not be retained",
+                    "checked_at": "2026-09-21T00:00:00+00:00",
+                }
+
+        result = capture_school({"school_id": "school", "name": "甲幼稚園", "address": "甲街", "website": "https://school.example/"}, FailedFetcher())
+
+        self.assertEqual(result["discovery_status"], "FETCH_FAILED")
+        self.assertEqual(result["pages"], [])
+        self.assertEqual(result["fields"]["application"]["evidence"], [])
+        self.assertEqual(result["fetch_failures"], [{
+            "checked_url": "https://school.example/admission?token=%5BREDACTED%5D",
+            "checked_at": "2026-09-21T00:00:00+00:00",
+            "reason_code": "HOST_RESOLUTION_FAILED",
+            "reason": "來源主機無法解析",
+        }])
+
+    def test_fetch_failure_reason_is_stable_bounded_and_redacts_query_secret(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fetcher = Fetcher(Path(directory))
+            with patch("scripts.kg_parent.school_sources.require_public_host", side_effect=ValueError("NON_PUBLIC_HOST")), patch("scripts.kg_parent.school_sources.time.sleep"):
+                result = fetcher.fetch("https://school.example/admission?api_key=secret", "school.example")
+
+        self.assertEqual(result["capture_status"], "FETCH_FAILED")
+        self.assertEqual(result["reason_code"], "NON_PUBLIC_HOST")
+        self.assertEqual(result["reason"], "來源主機不是公開網絡位址")
+        self.assertEqual(result["checked_url"], "https://school.example/admission?api_key=%5BREDACTED%5D")
+        self.assertNotIn("secret", result["reason"])
+
+    def test_manifest_aggregates_failure_reason_counts(self):
+        schools = [{"school_id": f"school-{index}"} for index in range(1025)]
+
+        def fake_capture(school, fetcher, target_year):
+            code = "HOST_RESOLUTION_FAILED" if school["school_id"] == "school-0" else "TIMEOUT"
+            return {"school_id": school["school_id"], "pages": [], "discovery_status": "FETCH_FAILED", "fetch_failures": [{"reason_code": code}]}
+
+        with tempfile.TemporaryDirectory() as directory:
+            with patch("scripts.kg_parent.school_sources.read_base_schools", return_value=schools), patch("scripts.kg_parent.school_sources.capture_school", side_effect=fake_capture):
+                result = run(Path(directory) / "base", Path(directory) / "out")
+            persisted = json.loads((Path(directory) / "out" / "manifest.json").read_text(encoding="utf8"))
+
+        self.assertEqual(result["fetch_failure_count"], 1025)
+        self.assertEqual(result["fetch_failure_reason_counts"], {"HOST_RESOLUTION_FAILED": 1, "TIMEOUT": 1024})
+        self.assertEqual(persisted["fetch_failure_count"], 1025)
 
     def test_parent_card_scope_is_used_instead_of_raw_source_groups(self):
         with tempfile.TemporaryDirectory() as directory:
