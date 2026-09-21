@@ -1,5 +1,13 @@
 # Implementation status — 2026-09-21
 
+## 2026-09-21 幼稚園 production asset API（已上線）
+
+PR [#26](https://github.com/ray510/HK_APP/pull/26) 及來源審核文件 PR [#27](https://github.com/ray510/HK_APP/pull/27) 已合併；正式發布 run [35615428087](https://github.com/ray510/HK_APP/actions/runs/35615428087) 以指定 source run `35606742074` 完成 `prepare / publish / live acceptance`。正式 commit 為 `530f1a54304efdb7090ddced5b86ab9975f69bc5`，Cloudflare Worker `hk-school-guide-production` Version ID 為 `34fc61f9-444d-40c3-8a82-ef712eb0313f`，kindergarten bundle 為 `521e532ceb3ca76080723c3d3439c7696e08311f5afdab26cd35e0003c4cbcad`；上一個可回復版本為 `fd66fb34-66e4-4813-9732-34854a849227`。
+
+production API 及 manifest 核對 1,025 張家長卡、1,759 個來源分組，逐校 artifact 為 1,025 個唯一 ID、四欄 `NOT_RUN=0`。`GET /api/v1/kindergartens` 首兩頁各 12 筆且 24 個 ID 全部不同，北區篩選總數為 45；detail API、bundle ID、request ID、400 無效輸入及 404 未知學校均通過。實際正式頁「再顯示 12 間」由 12 增至 24，並顯示逐校候選、待覆核及 TLS／HTTP／DNS 等具體失敗原因。
+
+Node／Python gates、真正 local `production.ts` workerd、desktop/mobile Playwright 及獨立 live Playwright 34 項全部通過。部署結果為 `LIVE_VERIFIED`，`database_writes=0`、`new_databases=0`、`new_model_calls=0`；durable archive 為 [kg-parent-521e532ceb3ca760-b6ecc0abda1c](https://github.com/ray510/HK_APP/releases/tag/kg-parent-521e532ceb3ca760-b6ecc0abda1c)。`human_usability_test=NOT_RUN` 仍未改變；139 校 `CANDIDATE`、349 校 `REVIEW`、474 校 `FETCH_FAILED` 及 63 校 `NOT_FOUND` 仍是明確未完成覆蓋，不能當成已人工確認資料。
+
 ## 2026-09-21 2027/28 幼稚園逐校來源完整執行
 
 逐校擷取及誤判修正已經由 PR [#16](https://github.com/ray510/HK_APP/pull/16) 至 [#24](https://github.com/ray510/HK_APP/pull/24) 分批合併；production asset API 及分頁前端由 PR [#26](https://github.com/ray510/HK_APP/pull/26) 合併為 `1f6a5c2c9726296aab68dadbc7ceb017b5437c24`。流程以現有 1,025 張幼稚園家長卡為唯一 scope，逐校只在登記校網的 HTTPS 原路徑、首頁及同一 www／apex host 內作有限擷取；不略過 TLS、公開 IP、redirect、host、文件大小或總容量限制。失敗會保存 checked URL、時間及 DNS、TLS、HTTP、timeout 等 reason code；沒有網址與網絡擷取失敗分開處理。
