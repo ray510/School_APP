@@ -5,10 +5,11 @@ export interface KGApplicationScope {year:number;grade:string;summary:string;nex
 export interface KGParentHighlight {topic:string;text:string}
 export type KGSourceStatus='NOT_RUN'|'CANDIDATE'|'REVIEW'|'FETCH_FAILED'|'NOT_FOUND'|'PUBLISHED';
 export interface KGSourceFieldState {status:KGSourceStatus;evidence_count:number;target_year?:number;reference_year?:number|null}
+export interface KGSourceIssue {reason_code:string;reason:string;checked_url?:string;checked_at?:string}
 export interface KGSourceEvidence {field:string;value:string;evidence_excerpt:string;url:string;target_year:number|null;reference_period:string|null;capture_status:string;review_status:string;publication_status:string;dates?:string[]}
 export interface KGSourcePage {url:string;capture_status:string;captured_at?:string;checked_at?:string;sha256:string;text_sha256?:string;review_status?:string;publication_status?:string;facts?:Record<string,KGSourceEvidence[]>}
 export interface KGSchoolSources {schema:number;target_entry_year:number;checked_at:string|null;discovery_status:KGSourceStatus;identity_status:string;review_status:string;publication_status:string;pages:KGSourcePage[];fields:Record<string,{status:KGSourceStatus;evidence_count:number;target_year:number;reference_year:number|null;evidence:KGSourceEvidence[];review_status:string;publication_status:string}>}
-export interface KGSummary {id:string;aliases:string[];name:string;address:string;district:string;sessions:string[];classification:Classification;profile_available:boolean;fee_status:string;fee_effective_from?:string;tuition_rows:FeeRow[];has_school_events:boolean;application_scopes:KGApplicationScope[];school_event_years:number[];parent_highlight:KGParentHighlight|null;parent_analysis_status:string;school_source_status?:KGSourceStatus;school_source_checked_at?:string|null;school_source_fields?:Record<string,KGSourceFieldState>}
+export interface KGSummary {id:string;aliases:string[];name:string;address:string;district:string;sessions:string[];classification:Classification;profile_available:boolean;fee_status:string;fee_effective_from?:string;tuition_rows:FeeRow[];has_school_events:boolean;application_scopes:KGApplicationScope[];school_event_years:number[];parent_highlight:KGParentHighlight|null;parent_analysis_status:string;school_source_status?:KGSourceStatus;school_source_checked_at?:string|null;school_source_issue?:KGSourceIssue|null;school_source_fields?:Record<string,KGSourceFieldState>}
 export interface Fact {value:string;field:string;state:string;edition:string;row:number;record_sha256:string}
 export interface SourcePage {id:string;url:string;text:string;captured_at:string;sha256:string;fact_status:string}
 export interface Evidence {field:string;text:string;source_id:string;edition:string;row:number;record_sha256:string}
@@ -17,10 +18,10 @@ export interface KGSchool extends KGSummary {profile:{fields:Record<string,strin
 export interface KGManifest {schema:number;phase:string;bundle_id:string;base_data_id:string;parent_cards:number;source_groups:number;annual_profiles:number;generated_at:string;fee_status_counts:Record<string,number>;inference:{model:string;status_counts:Record<string,number>;quality:string};school_pages_linked:number;human_usability_test:string}
 export const sessions:Record<string,string>={WD:'全日班',AM:'上午班',PM:'下午班'};
 export const topics:Record<string,string>={learning:'每日點學',settling:'適應同支援',admission:'報名要留意',care:'接送照顧'};
-export const sourceStatusLabel:Record<KGSourceStatus,string>={NOT_RUN:'尚未執行逐校擷取',CANDIDATE:'已找到校方資料，待身份及內容覆核',REVIEW:'已擷取相關資料，待核對學年或欄位',FETCH_FAILED:'校方資料擷取失敗',NOT_FOUND:'未找到可核對的校方資料',PUBLISHED:'已核對並可公開使用'};
+export const sourceStatusLabel:Record<KGSourceStatus,string>={NOT_RUN:'尚未執行逐校擷取',CANDIDATE:'已找到校方資料，待身份及內容覆核',REVIEW:'已擷取相關資料，待核對學年或欄位',FETCH_FAILED:'逐校來源擷取失敗',NOT_FOUND:'逐校來源未找到可核對資料',PUBLISHED:'已核對並可公開使用'};
 export const sourceFieldLabel:Record<string,string>={application:'報名日期／步驟',form:'申請表格／網上表格',fees:'校本費用',hours:'上課／班別時間'};
 export function sourceField(s:KGSummary,field:string):KGSourceFieldState|undefined{return s.school_source_fields?.[field]}
-export function sourceAnswer(s:KGSummary,field:string):{value:string;detail:string}|null {const state=sourceField(s,field);if(!state||!['CANDIDATE','REVIEW','PUBLISHED'].includes(state.status))return null;const label=sourceFieldLabel[field]??field;return {value:sourceStatusLabel[state.status],detail:`${label}：${state.evidence_count?`已有 ${state.evidence_count} 段證據候選`:'暫未有可核對證據'}；目標學年為 2027/28。`}}
+export function sourceAnswer(s:KGSummary,field:string):{value:string;detail:string}|null {const state=sourceField(s,field);if(!state)return null;const label=sourceFieldLabel[field]??field;const evidence=state.evidence_count?`已有 ${state.evidence_count} 段證據候選`:'暫未有可核對證據';const issue=s.school_source_issue;const reason=issue?.reason?` 原因：${issue.reason}（${issue.reason_code}）。`:'';const notFound=issue?.reason_code==='NO_REGISTERED_SCHOOL_WEBSITE'?'年度校情資料未有登記該校網址，未能自動檢查校方網站':`已檢查目前可用的逐校來源但未找到可核對資料${reason}`;const detail=state.status==='FETCH_FAILED'?`${label}：本次逐校來源擷取失敗，未能判斷校方是否已公布相關資料；不代表學校尚未公布。${reason}目標學年為 2027/28。`:state.status==='NOT_FOUND'?`${label}：${notFound}；不代表學校尚未公布。目標學年為 2027/28。`:state.status==='NOT_RUN'?`${label}：尚未執行逐校擷取，未能判斷校方是否已公布相關資料。目標學年為 2027/28。`:state.status==='CANDIDATE'?`${label}：${evidence}；待身份及內容覆核，不能當作已確認資料。目標學年為 2027/28。`:state.status==='REVIEW'?`${label}：${evidence}；待核對學年或欄位，不能當作已確認資料。目標學年為 2027/28。`:`${label}：${evidence}；目標學年為 2027/28。`;return {value:issue?.reason??sourceStatusLabel[state.status],detail};}
 export const money=(cents:number)=>'HK$'+(cents/100).toLocaleString('zh-HK',{minimumFractionDigits:cents%100?2:0,maximumFractionDigits:2});
 export function costs(rows:FeeRow[],grade:string,session:string):{rows:FeeRow[];subtotal:number|null;periods:string;complete:false}{
  const selected=rows.filter(r=>r.grade===grade&&r.session===session);
@@ -29,9 +30,10 @@ export function costs(rows:FeeRow[],grade:string,session:string):{rows:FeeRow[];
 }
 export function feePeriod(date:string|undefined,year:number):string {return date?`${date} 起生效；${Number(date.slice(0,4))===year?'請確認目標學年仍適用':'不是 '+year+'/'+String(year+1).slice(-2)+' 已確認報價'}`:'尚未取得可計算的同校址收費文件';}
 export function feeCard(s:KGSummary,grade:string,session:string,year:number):{value:string;detail:string} {
- const c=costs(s.tuition_rows,grade,session);if(c.subtotal!==null)return {value:money(c.subtotal)+'／年，已知小計',detail:feePeriod(s.fee_effective_from,year)};
- const discovered=year===2027?sourceAnswer(s,'fees'):null;if(discovered)return {value:discovered.value,detail:discovered.detail};
- const className=grade+' '+(sessions[session]??session),period=feePeriod(s.fee_effective_from,year);
+ const c=costs(s.tuition_rows,grade,session),className=grade+' '+(sessions[session]??session),period=feePeriod(s.fee_effective_from,year),sameYear=Number(s.fee_effective_from?.slice(0,4))===year;
+ if(c.subtotal!==null&&sameYear)return {value:money(c.subtotal)+'／年，已知小計',detail:period};
+ const discovered=year===2027?sourceAnswer(s,'fees'):null;if(discovered){const reference=c.subtotal!==null?`另有非目標學年的已知小計 ${money(c.subtotal)}／年；${period}。`:s.fee_status==='LAYOUT_REVIEW'?`另有 ${period.replace('；','文件；版面待覆核，暫未能計算 '+className+'小計；')}。`:'';return {value:discovered.value,detail:discovered.detail+(reference?' '+reference:'')}}
+ if(c.subtotal!==null)return {value:money(c.subtotal)+'／年，已知小計',detail:period};
  if(s.fee_status==='LAYOUT_REVIEW')return {value:'收費文件版面待覆核',detail:`已取得 ${period.replace('；','文件；版面待覆核，暫未能計算 '+className+'小計；')}`};
  return {value:`未有 ${className}可核對小計`,detail:s.fee_effective_from?period+'；文件未有此班別通過核對的學費資料。':period};
 }
