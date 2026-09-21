@@ -1,5 +1,6 @@
 import unittest
 import json
+import http.client
 import tempfile
 import urllib.error
 from pathlib import Path
@@ -157,6 +158,13 @@ class SchoolSources(unittest.TestCase):
             {"submission", "office"},
         )
 
+    def test_event_time_near_class_word_is_not_class_hours(self):
+        facts = extract_facts(
+            "2027/28 Admissions\nIn-Class Experiential Day\nThursday, 8th October 2026 | 5–6:30 pm | Island West Campus",
+            "https://school.example/admission",
+        )
+        self.assertEqual(facts.get("hours", []), [])
+
     def test_fee_kind_keeps_non_tuition_amounts_out_of_fee_candidates(self):
         facts = extract_facts(
             "2027/28 K1 收生\n"
@@ -266,6 +274,7 @@ class SchoolSources(unittest.TestCase):
 
     def test_http_failure_keeps_specific_status(self):
         self.assertEqual(failure_reason(urllib.error.HTTPError("https://school.example", 403, "Forbidden", {}, None)), ("HTTP_403", "來源拒絕自動擷取（HTTP 403）"))
+        self.assertEqual(failure_reason(http.client.IncompleteRead(b"", 1)), ("HTTP_PROTOCOL_ERROR", "來源 HTTP 傳輸中斷"))
 
     def test_manifest_aggregates_failure_reason_counts(self):
         schools = [{"school_id": f"school-{index}"} for index in range(1025)]

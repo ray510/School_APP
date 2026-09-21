@@ -9,6 +9,7 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import html
+import http.client
 import ipaddress
 import json
 import pathlib
@@ -49,7 +50,9 @@ FAILURE_REASON_MESSAGES = {
     "HTTP_405": "來源不接受此讀取方式（HTTP 405）",
     "HTTP_4XX": "來源回應用戶端錯誤",
     "HTTP_5XX": "來源回應伺服器錯誤",
+    "HTTP_PROTOCOL_ERROR": "來源 HTTP 傳輸中斷",
     "TLS_ERROR": "來源的 HTTPS 憑證或協定無法驗證",
+    "CONTENT_DECODE_ERROR": "來源內容編碼無法解析",
     "TIMEOUT": "來源連線逾時",
     "NETWORK_ERROR": "來源網絡連線失敗",
     "UNKNOWN_ERROR": "來源擷取發生未分類錯誤",
@@ -65,8 +68,8 @@ FORM_LINK_TERMS = (
     "registration-form", "online form", "online application", "online registration",
 )
 CLASS_HOUR_TERMS = (
-    "上課", "課堂", "課程", "上午班", "下午班", "半日班", "全日班", "上學", "放學", "下課",
-    "作息", "課時", "班級", "class", "lesson", "session", "dismissal",
+    "上課", "課堂", "上午班", "下午班", "半日班", "全日班", "上學", "放學", "下課",
+    "作息", "課時", "class hours", "class time", "school hours", "lesson time", "dismissal",
 )
 SUBMISSION_HOUR_TERMS = (
     "派表", "收表", "交表", "遞交", "提交", "報名", "申請", "截止", "索取", "親臨",
@@ -163,6 +166,10 @@ def failure_reason(exc: BaseException | str | None) -> tuple[str, str]:
         return "HOST_RESOLUTION_FAILED", FAILURE_REASON_MESSAGES["HOST_RESOLUTION_FAILED"]
     if isinstance(exc, (ssl.SSLError, ssl.CertificateError)):
         return "TLS_ERROR", FAILURE_REASON_MESSAGES["TLS_ERROR"]
+    if isinstance(exc, http.client.HTTPException):
+        return "HTTP_PROTOCOL_ERROR", FAILURE_REASON_MESSAGES["HTTP_PROTOCOL_ERROR"]
+    if isinstance(exc, UnicodeError):
+        return "CONTENT_DECODE_ERROR", FAILURE_REASON_MESSAGES["CONTENT_DECODE_ERROR"]
     if isinstance(exc, urllib.error.URLError):
         if isinstance(exc.reason, (TimeoutError, socket.timeout)):
             return "TIMEOUT", FAILURE_REASON_MESSAGES["TIMEOUT"]
@@ -171,7 +178,7 @@ def failure_reason(exc: BaseException | str | None) -> tuple[str, str]:
         if isinstance(exc.reason, (ssl.SSLError, ssl.CertificateError)):
             return "TLS_ERROR", FAILURE_REASON_MESSAGES["TLS_ERROR"]
         return "NETWORK_ERROR", FAILURE_REASON_MESSAGES["NETWORK_ERROR"]
-    if isinstance(exc, subprocess.CalledProcessError):
+    if isinstance(exc, (subprocess.CalledProcessError, subprocess.TimeoutExpired)):
         return "PDF_TEXT_EXTRACTION_FAILED", FAILURE_REASON_MESSAGES["PDF_TEXT_EXTRACTION_FAILED"]
     return "UNKNOWN_ERROR", FAILURE_REASON_MESSAGES["UNKNOWN_ERROR"]
 
