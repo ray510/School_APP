@@ -49,6 +49,9 @@ class SchoolSources(unittest.TestCase):
         self.assertTrue(is_target_year("2027/28 K1 入學申請"))
         self.assertTrue(is_target_year("2027 至 2028 學年 K1 入學申請"))
         self.assertFalse(is_target_year("2026/27 K1 入學申請"))
+        self.assertFalse(is_target_year("/admission2728/K1 form(26-27).pdf"))
+        self.assertFalse(is_target_year("2027/28 新頁連往 2022至2023 年度舊表格"))
+        self.assertFalse(is_target_year("2027/28 申請表 /%e6%8b%9b%e6%94%b6-2022%e8%87%b32023%e5%b9%b4%e5%ba%a6"))
 
     def test_private_literal_and_ports_are_rejected(self):
         self.assertIsNone(safe_https_url("https://127.0.0.1/admission", "127.0.0.1"))
