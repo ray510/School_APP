@@ -3,12 +3,21 @@ import pathlib,json,hashlib,collections
 root=pathlib.Path('.');dist=root/'apps/web/dist-production';out=root/'artifacts/kg-parent'
 def read(p):return json.loads(p.read_text())
 m=read(dist/'kg-parent-manifest.json');folder=dist/'kg-parent'/m['bundle_id'];idx=read(folder/'index.json');aliases=read(folder/'aliases.json');prepared=read(out/'prepared.json');source={r['id']:r for r in prepared['records']};inputs=read(out/'inputs.json');original={r['id']:r for r in inputs['records']}
+assert m['schema']==2
 assert len(aliases)==m['source_groups']==1759 and len(idx)==m['parent_cards'];assert len(source)==len(idx)
 seen=set();quotes=0;fee_rows=0
 for entry in idx:
  s=read(folder/'schools'/(entry['id']+'.json'));o=original[s['id']]
  assert s['aliases']==o['aliases'] and s['name']==o['name']
  assert s['profile']==(o['annual'][0] if len(o['annual'])==1 else None)
+ scopes={(x['year'],x['grade']):x for x in entry['application_scopes']}
+ assert set(scopes)=={(x['year'],x['grade']) for x in s['application_steps']}
+ for key,scope in scopes.items():
+  steps=[x['action'] for x in s['application_steps'] if (x['year'],x['grade'])==key];assert scope['summary']==steps[0] and scope['next_step']==steps[min(1,len(steps)-1)]
+ assert entry['school_event_years']==sorted({e['entry_year'] for e in s['events']})
+ supported=[x['evidence']['text'] for x in s['parent_analysis']['selections'].values() if x.get('state')=='SUPPORTED' and x.get('evidence')]
+ assert (entry['parent_highlight'] is None)==(not supported)
+ if entry['parent_highlight']:assert entry['parent_highlight']['text'] in supported
  if s['profile']:
   p=s['profile'];seen.add((p['source_id'],p['row'],p['record_sha256']))
   for selection in s['parent_analysis']['selections'].values():

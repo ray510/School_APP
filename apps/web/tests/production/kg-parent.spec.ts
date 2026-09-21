@@ -14,6 +14,9 @@ test('parent application steps, class hours and private notes',async({page,reque
  await page.goto('/kindergarten/'+s.id+'?year=2027');await expect(page.locator('li').filter({hasText:'遞交方法：親臨／郵寄至本幼稚園遞交'})).toBeVisible();await expect(page.getByText('全日班：09:00–16:30（2025/26）',{exact:false}).first()).toBeVisible();await page.getByRole('button',{name:'加入我的清單'}).click();await expect(page.getByRole('status')).toHaveText('已儲存於此瀏覽器。');
  await page.goto('/kindergarten/plan');const secret='parent-private-'+Date.now();await page.getByLabel('查詢回覆及私人筆記').fill(secret);await page.getByRole('button',{name:'儲存進度及筆記'}).click();await expect(page.getByRole('status')).toHaveText('已儲存於此瀏覽器。');await page.reload();await expect(page.getByLabel('查詢回覆及私人筆記')).toHaveValue(secret);expect(calls.some(x=>x.includes(secret))).toBe(false);
 });
+test('search card surfaces school-specific fee, admission and profile evidence',async({page})=>{
+ await page.goto('/kindergarten?year=2027&grade=K1&session=WD&q='+encodeURIComponent('上水堂幼稚園'));const card=page.locator('.kg-search-card').filter({hasText:'上水堂幼稚園'});await expect(card).toBeVisible();await expect(card).toContainText('收費文件版面待覆核');await expect(card).toContainText('暫未能計算 K1 全日班小計');await expect(card).toContainText('已核對 2027/28 K1 校方申請步驟');await expect(card).toContainText('2026年9月8日開始收表');await expect(card).not.toContainText('先查目標學年校方公告');await expect(card.locator('.kg-small strong')).toBeVisible();
+});
 test('responsive kindergarten shell stays viewport-safe and touch-sized',async({page},testInfo)=>{
  await page.goto('/');const viewport=await page.evaluate(()=>({client:document.documentElement.clientWidth,scroll:document.documentElement.scrollWidth}));expect(viewport.scroll).toBeLessThanOrEqual(viewport.client);
  if(testInfo.project.name!=='mobile')return;

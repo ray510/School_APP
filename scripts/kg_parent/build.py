@@ -9,6 +9,7 @@ def stable(x):return json.dumps(x,ensure_ascii=False,sort_keys=True,separators=(
 def sha(x):return hashlib.sha256(x if isinstance(x,bytes) else stable(x).encode()).hexdigest()
 def write(p,x):p.parent.mkdir(parents=True,exist_ok=True);p.write_text(stable(x)+'\n',encoding='utf8')
 POLICY='kg-parent-evidence-v1'
+INDEX_SCHEMA=2
 TOPICS={
  'learning':('每日點學','選最能描述實際遊戲、探究、語文或日常學習安排的原文，不選全人發展等口號。','問清每日活動如何分配、幼兒自主選擇及語文活動的實際頻次。'),
  'settling':('適應同支援','選最具體的新生適應、家長陪同、幼小銜接、社工或情緒支援安排原文。','問清適應活動幾耐、家長能否陪同，以及幼兒未適應時怎樣處理。'),
@@ -127,7 +128,7 @@ def finalize():
  for r in p['records']:
   r['parent_analysis']=lookup.get(r['id'],{'status':'NO_PROFILE','selections':{}})
   if r['profile'] and r['parent_analysis']['profile_hash']!=r['profile']['record_sha256']:raise ValueError('Wrong profile inference')
- bundle=sha({'records':p['records'],'policy':POLICY,'base':p['base_data_id']});folder=DIST/'kg-parent'/bundle
+ bundle=sha({'records':p['records'],'policy':POLICY,'base':p['base_data_id'],'index_schema':INDEX_SCHEMA});folder=DIST/'kg-parent'/bundle
  aliases={a:r['id'] for r in p['records'] for a in r['aliases']}
  if len(aliases)!=p['source_groups']:raise ValueError('ID loss')
  index=[]
@@ -135,10 +136,14 @@ def finalize():
   if r['fees'].get('document'):
    d=r['fees']['document'];dest=folder/'documents'/d['path'];dest.parent.mkdir(parents=True,exist_ok=True);dest.write_bytes((CAP/d['path']).read_bytes());r['fees']['archived_url']='/kg-parent/'+bundle+'/documents/'+d['path']
   write(folder/'schools'/(r['id']+'.json'),r)
-  index.append({k:r[k] for k in ('id','aliases','name','address','district','sessions','classification')}|{'profile_available':bool(r['profile']),'fee_status':r['fees']['status'],'fee_effective_from':r['fees'].get('effective_from'),'tuition_rows':[{k:v for k,v in f.items() if not k.startswith('evidence')} for f in r['fees']['rows']],'has_school_events':bool(r['events']),'parent_analysis_status':r['parent_analysis']['status']})
+  groups=collections.defaultdict(list)
+  for step in r['application_steps']:groups[(step['year'],step['grade'])].append(step['action'])
+  scopes=[{'year':year,'grade':grade,'summary':steps[0],'next_step':steps[1] if len(steps)>1 else steps[0]} for (year,grade),steps in groups.items()]
+  selections=r['parent_analysis'].get('selections',{});highlight=next(({'topic':TOPICS[key][0],'text':selections[key]['evidence']['text']} for key in TOPICS if selections.get(key,{}).get('state')=='SUPPORTED' and selections[key].get('evidence')),None)
+  index.append({k:r[k] for k in ('id','aliases','name','address','district','sessions','classification')}|{'profile_available':bool(r['profile']),'fee_status':r['fees']['status'],'fee_effective_from':r['fees'].get('effective_from'),'tuition_rows':[{k:v for k,v in f.items() if not k.startswith('evidence')} for f in r['fees']['rows']],'has_school_events':bool(r['events']),'application_scopes':scopes,'school_event_years':sorted({e['entry_year'] for e in r['events']}),'parent_highlight':highlight,'parent_analysis_status':r['parent_analysis']['status']})
  write(folder/'index.json',index);write(folder/'aliases.json',aliases);write(folder/'common-events.json',p['common_events'])
  summary={k:v for k,v in ai.items() if k!='results'}
- manifest={'schema':1,'phase':'KG_ONLY','bundle_id':bundle,'base_data_id':p['base_data_id'],'analysis_id':p['analysis_id'],'official_bundle_id':p['official_bundle_id'],'source_groups':p['source_groups'],'parent_cards':len(index),'annual_profiles':962,'generated_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'fee_status_counts':p['fee_status_counts'],'public_capture':p['capture_summary'],'public_page_documents':p['page_documents'],'inference':summary,'scope':'All existing KG groups retained; document parsing and individual school-page coverage vary. No 2027 fee guarantee, rankings or private model data.','human_usability_test':'NOT_RUN','school_pages_linked':sum(bool(r['new_pages']) for r in p['records'])}
+ manifest={'schema':INDEX_SCHEMA,'phase':'KG_ONLY','bundle_id':bundle,'base_data_id':p['base_data_id'],'analysis_id':p['analysis_id'],'official_bundle_id':p['official_bundle_id'],'source_groups':p['source_groups'],'parent_cards':len(index),'annual_profiles':962,'generated_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'fee_status_counts':p['fee_status_counts'],'public_capture':p['capture_summary'],'public_page_documents':p['page_documents'],'inference':summary,'scope':'All existing KG groups retained; document parsing and individual school-page coverage vary. No 2027 fee guarantee, rankings or private model data.','human_usability_test':'NOT_RUN','school_pages_linked':sum(bool(r['new_pages']) for r in p['records'])}
  write(folder/'manifest.json',manifest);write(DIST/'kg-parent-manifest.json',manifest)
  download=OUT/('school-kg-parent-'+bundle[:16]+'.zip')
  with zipfile.ZipFile(download,'w',zipfile.ZIP_DEFLATED) as z:

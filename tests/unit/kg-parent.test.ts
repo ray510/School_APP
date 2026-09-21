@@ -1,10 +1,12 @@
-import {describe,it,expect} from 'vitest';import {costs,feePeriod,selectedIds,careMatch,parentReadiness,type KGSchool,type KGSummary} from '../../apps/web/src/full/kg/model';
+import {describe,it,expect} from 'vitest';import {admissionCard,costs,feeCard,feePeriod,selectedIds,careMatch,parentReadiness,type KGSchool,type KGSummary} from '../../apps/web/src/full/kg/model';
 const row={grade:'K1',session:'WD',category:'tuition',cents:75900,periods:11,annual_cents:834900};
 describe('parent facts not model guesses',()=>{
  it('sums only same grade/session, without assumed 12 periods',()=>expect(costs([row,{...row,category:'meal',cents:49500,annual_cents:544500}],'K1','WD').subtotal).toBe(1379400));
  it('no costs is unknown not zero',()=>expect(costs([],'K1','WD').subtotal).toBeNull());
  it('free is a real zero, never complete all costs',()=>{const r=costs([{...row,cents:0,annual_cents:0}],'K1','WD');expect(r.subtotal).toBe(0);expect(r.complete).toBe(false);});
  it('does not mix sessions or years by hiding date',()=>{expect(costs([row],'K1','AM').subtotal).toBeNull();expect(feePeriod('2026-09-01',2027)).toContain('不是 2027/28');});
+ it('explains why a captured fee document has no usable subtotal',()=>{const s={fee_status:'LAYOUT_REVIEW',fee_effective_from:'2026-09-01',tuition_rows:[]} as unknown as KGSummary;const r=feeCard(s,'K1','WD',2027);expect(r.value).toBe('收費文件版面待覆核');expect(r.detail).toContain('暫未能計算 K1 全日班小計');expect(r.detail).toContain('不是 2027/28 已確認報價');});
+ it('uses verified school application steps even when no event row exists',()=>{const s={has_school_events:false,application_scopes:[{year:2027,grade:'K1',summary:'2027/2028學年幼兒班（K1）入學申請注意事項',next_step:'收表日期：2026年9月8日開始收表 (全年收表)'}],school_event_years:[]} as unknown as KGSummary;const r=admissionCard(s,'K1',2027);expect(r.value).toBe('已核對 2027/28 K1 校方申請步驟');expect(r.detail).toContain('2026年9月8日開始收表');});
  it('rejects inconsistent sum',()=>expect(()=>costs([{...row,annual_cents:5}],'K1','WD')).toThrow());
  it('same source aliases are not two schools',()=>expect(()=>selectedIds(['a','b'],[{id:'a',aliases:['a','b']} as KGSummary])).toThrow());
  it('unknown or historical hours do not prove pickup match',()=>{const s={hours:[{session:'WD',start:'09:00',end:'16:30',year:2025}]} as KGSchool;expect(careMatch(s,'WD','17:00',2027)).toContain('未有足夠同學年');});
