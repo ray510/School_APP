@@ -63,6 +63,10 @@ def content_sha256(raw: bytes) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
+def document_key(raw: bytes, is_pdf: bool) -> str:
+    return f"{content_sha256(raw)}-{'pdf' if is_pdf else 'html'}"
+
+
 def approved_hosts(base_host: str | None) -> set[str]:
     return {normalized_host(base_host), "edb.gov.hk", "applications.edb.gov.hk"}
 
@@ -357,7 +361,8 @@ class Fetcher:
                             raise ValueError("CAPTURE_BYTE_BUDGET")
                         self.total_bytes += len(raw)
                     is_pdf = raw.startswith(b"%PDF") or "application/pdf" in content_type.lower()
-                    url_key = hashlib.sha256(safe.encode()).hexdigest()[:24]
+                    document_sha = content_sha256(raw)
+                    url_key = document_key(raw, is_pdf)
                     ext = ".pdf" if is_pdf else ".html"
                     path = self.out / "documents" / (url_key + ext)
                     text_path = self.out / "documents" / (url_key + ".txt")
@@ -375,7 +380,7 @@ class Fetcher:
                     return {
                         "url": safe, "capture_status": "CAPTURED", "attempt": attempt,
                         "captured_at": now(), "checked_at": now(), "path": str(path.relative_to(self.out)),
-                        "text_path": str(text_path.relative_to(self.out)), "sha256": hashlib.sha256(raw).hexdigest(),
+                        "text_path": str(text_path.relative_to(self.out)), "sha256": document_sha,
                         "text_sha256": content_sha256(text_path.read_bytes()), "bytes": len(raw),
                         "facts": extract_facts(text, safe, links), "discovered_links": [] if is_pdf else discover_links(raw, safe, content_type=content_type),
                         "review_status": "REVIEW_REQUIRED", "publication_status": "UNPUBLISHED",

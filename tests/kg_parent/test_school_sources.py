@@ -7,6 +7,7 @@ from unittest.mock import patch
 from scripts.kg_parent.school_sources import (
     content_sha256,
     decode_html,
+    document_key,
     discover_links,
     extract_facts,
     field_states,
@@ -63,6 +64,10 @@ class SchoolSources(unittest.TestCase):
         raw = "2027/28 K1".encode()
         self.assertEqual(content_sha256(raw), content_sha256(raw))
         self.assertNotEqual(content_sha256(raw), content_sha256(b"changed"))
+
+    def test_document_path_changes_with_captured_bytes(self):
+        self.assertNotEqual(document_key(b"first", False), document_key(b"changed", False))
+        self.assertNotEqual(document_key(b"first", False), document_key(b"first", True))
 
     def test_parent_card_scope_is_used_instead_of_raw_source_groups(self):
         with tempfile.TemporaryDirectory() as directory:
