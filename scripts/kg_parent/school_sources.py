@@ -435,7 +435,8 @@ def _application_hour_kind(line: str, window: str) -> str | None:
 
 
 def _is_form_link(label: str, href: str) -> bool:
-    return _has_term(f"{label} {href}", FORM_LINK_TERMS)
+    text = f"{label} {href}".casefold()
+    return any(term.casefold() in text for term in FORM_LINK_TERMS if term != "form") or re.search(r"(?<![a-z])forms?(?![a-z])", text) is not None
 
 
 def _is_root_url(value: str) -> bool:
