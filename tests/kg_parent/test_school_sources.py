@@ -4,6 +4,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
+from scripts.kg_parent.build import reuse_profile_results
 from scripts.kg_parent.school_sources import (
     content_sha256,
     decode_html,
@@ -20,6 +21,15 @@ from scripts.kg_parent.school_sources import (
 
 
 class SchoolSources(unittest.TestCase):
+    def test_completed_selection_is_remapped_only_for_the_exact_profile(self):
+        profile = {"fields": {"課程": "遊戲中學習"}, "record_sha256": "a" * 64}
+        prepared = {"records": [{"id": "new-id", "profile": profile}]}
+        result = {"id": "old-id", "profile_hash": "a" * 64, "selections": {"learning": {"evidence": {"field": "課程", "text": "遊戲中學習", "record_sha256": "a" * 64}}}}
+        self.assertEqual(reuse_profile_results(prepared, [result])[0]["id"], "new-id")
+        result["selections"]["learning"]["evidence"]["text"] = "已改內容"
+        with self.assertRaisesRegex(ValueError, "Source quote mismatch"):
+            reuse_profile_results(prepared, [result])
+
     def test_target_year_is_explicit(self):
         self.assertTrue(is_target_year("2027/28 K1 入學申請"))
         self.assertTrue(is_target_year("2027 至 2028 學年 K1 入學申請"))

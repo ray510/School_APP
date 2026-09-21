@@ -75,7 +75,7 @@ jobs:
           github-token: ${{ github.token }}
           path: reused-kg
           merge-multiple: true
-      - name: Reuse exact input-verified completed model analysis without new calls
+      - name: Reuse source-exact completed model selections without new calls
         id: reuse_inference
         if: github.event.inputs.inference_mode != 'fresh'
         continue-on-error: true
