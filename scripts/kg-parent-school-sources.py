@@ -22,8 +22,8 @@ def main() -> int:
     parser.add_argument("--target-year", type=int, default=TARGET_YEAR)
     parser.add_argument("--plan-only", action="store_true")
     args = parser.parse_args()
-    if args.target_year < 2027:
-        raise SystemExit("target year must be 2027 or later; previous years cannot be promoted")
+    if args.target_year != 2027:
+        raise SystemExit("this release accepts only target year 2027; other years need a separately reviewed source cycle")
     report = run(args.base, args.out, args.target_year, args.plan_only)
     print({k: v for k, v in report.items() if k not in ("schools",)})
     return 0

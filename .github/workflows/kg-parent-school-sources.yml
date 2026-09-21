@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       target_year:
-        description: Target kindergarten entry year; only 2027 or later is accepted
+        description: Target kindergarten entry year; this reviewed cycle accepts only 2027
         required: true
         default: '2027'
         type: string

@@ -29,11 +29,20 @@ for entry in idx:
   e=selection.get('evidence')
   if e:assert not is_generic_guidance(e['text'])
  sources=s.get('school_sources',{});assert sources.get('target_entry_year')==2027
+ source_root=(root/'captured-parent'/'school-sources').resolve();page_facts={field:[] for field in ('application','form','fees','hours')}
+ for page in sources.get('pages',[]):
+  path=(source_root/page['path']).resolve();text_path=(source_root/page['text_path']).resolve()
+  assert path.is_relative_to(source_root) and text_path.is_relative_to(source_root)
+  assert path.is_file() and text_path.is_file()
+  assert hashlib.sha256(path.read_bytes()).hexdigest()==page['sha256']
+  assert hashlib.sha256(text_path.read_bytes()).hexdigest()==page['text_sha256']
+  for field,facts in page.get('facts',{}).items():
+   assert field in page_facts;page_facts[field].extend(facts)
  for field in ('application','form','fees','hours'):
   state=sources['fields'][field];assert state['status'] in {'NOT_RUN','CANDIDATE','REVIEW','FETCH_FAILED','NOT_FOUND','PUBLISHED'}
-  for page in sources.get('pages',[]):
-   path=root/'captured-parent'/'school-sources'/page['path']
-   if path.exists():assert hashlib.sha256(path.read_bytes()).hexdigest()==page['sha256']
+  assert state['evidence_count']==len(page_facts[field]) and state['evidence']==page_facts[field][:20]
+  if state['status']=='CANDIDATE':assert any(e.get('target_year')==2027 for e in page_facts[field])
+  if state['status']=='PUBLISHED':assert state['review_status']=='APPROVED' and state['publication_status']=='PUBLISHED'
  for f in s['fees']['rows']:
   d=s['fees']['document'];text=(root/'captured-parent'/d['text_path']).read_text();assert text[f['evidence_start']:f['evidence_end']]==f['evidence_text'];assert f['cents']*f['periods']==f['annual_cents'];fee_rows+=1
  for h in s['hours']:assert any(h['evidence'] in d['text'] and h['source_url']==d['url'] for d in s['new_pages'])

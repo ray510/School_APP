@@ -20,7 +20,7 @@ export const topics:Record<string,string>={learning:'每日點學',settling:'適
 export const sourceStatusLabel:Record<KGSourceStatus,string>={NOT_RUN:'尚未執行逐校擷取',CANDIDATE:'已找到校方資料，待身份及內容覆核',REVIEW:'已擷取相關資料，待核對學年或欄位',FETCH_FAILED:'校方資料擷取失敗',NOT_FOUND:'未找到可核對的校方資料',PUBLISHED:'已核對並可公開使用'};
 export const sourceFieldLabel:Record<string,string>={application:'報名日期／步驟',form:'申請表格／網上表格',fees:'校本費用',hours:'上課／班別時間'};
 export function sourceField(s:KGSummary,field:string):KGSourceFieldState|undefined{return s.school_source_fields?.[field]}
-export function sourceAnswer(s:KGSummary,field:string):{value:string;detail:string}|null {const state=sourceField(s,field);if(!state||state.status==='NOT_RUN')return null;const label=sourceFieldLabel[field]??field;return {value:sourceStatusLabel[state.status],detail:`${label}：${state.evidence_count?`已有 ${state.evidence_count} 段證據候選`:'暫未有可核對證據'}；目標學年為 2027/28。`}}
+export function sourceAnswer(s:KGSummary,field:string):{value:string;detail:string}|null {const state=sourceField(s,field);if(!state||!['CANDIDATE','REVIEW','PUBLISHED'].includes(state.status))return null;const label=sourceFieldLabel[field]??field;return {value:sourceStatusLabel[state.status],detail:`${label}：${state.evidence_count?`已有 ${state.evidence_count} 段證據候選`:'暫未有可核對證據'}；目標學年為 2027/28。`}}
 export const money=(cents:number)=>'HK$'+(cents/100).toLocaleString('zh-HK',{minimumFractionDigits:cents%100?2:0,maximumFractionDigits:2});
 export function costs(rows:FeeRow[],grade:string,session:string):{rows:FeeRow[];subtotal:number|null;periods:string;complete:false}{
  const selected=rows.filter(r=>r.grade===grade&&r.session===session);
@@ -38,8 +38,8 @@ export function feeCard(s:KGSummary,grade:string,session:string,year:number):{va
 export function admissionCard(s:KGSummary,grade:string,year:number):{value:string;detail:string} {
  const schoolYear=year+'/'+String(year+1).slice(-2),scope=s.application_scopes?.find(x=>x.year===year&&x.grade===grade);
  if(scope)return {value:`已核對 ${schoolYear} ${grade} 校方申請步驟`,detail:scope.next_step||scope.summary};
- const discovered=year===2027?sourceAnswer(s,'application'):null;if(discovered)return {value:discovered.value,detail:discovered.detail};
  if(grade==='K1'&&s.school_event_years?.includes(year))return {value:`有本校 ${schoolYear} 招生公告`,detail:'請開啟學校頁查看適用條件及日期。'};
+ const discovered=year===2027?sourceAnswer(s,'application'):null;if(discovered)return {value:discovered.value,detail:discovered.detail};
  if(s.has_school_events)return {value:'只有其他學年本校公告',detail:`未接通 ${schoolYear} ${grade} 校方申請日期；不沿用舊年份截止日。`};
  return {value:`未接通 ${schoolYear} ${grade} 校方公告`,detail:'公開資料未有具體當屆步驟；不代表學校尚未公布。'};
 }
@@ -49,9 +49,9 @@ export function sessionMeaning(s:{sessions:string[]},session:string):string {
 }
 export function noteStatus(s:KGSchool,grade:string,year:number):string {
  const steps=s.application_steps?.filter(e=>e.year===year&&e.grade===grade)??[];if(steps.length)return '已核對本校當屆申請步驟，請按以下清單辦理。';
- const discovered=year===2027?sourceAnswer(s,'application'):null;if(discovered)return discovered.detail;
  const events=s.events.filter(e=>e.entry_year===year);
  if(grade==='K1'&&events.length)return '已收錄本校'+year+'/'+String(year+1).slice(-2)+'招生公告；按下方步驟辦理。';
+ const discovered=year===2027?sourceAnswer(s,'application'):null;if(discovered)return discovered.detail;
  return '先向學校確認 '+year+'/'+String(year+1).slice(-2)+' '+grade+' 申請方法；不沿用舊年份截止日。';
 }
 export function vacancyText(s:KGSchool,grade:string,year:number):string {
@@ -71,7 +71,7 @@ export interface ParentReadiness {admission:ParentReadinessItem;fees:ParentReadi
 export const readinessLabel:Record<ParentReadinessState,string>={CONFIRMED:'有同學年資料',REFERENCE_ONLY:'只有參考資料',TO_CONFIRM:'仍要向學校確認'};
 export function parentReadiness(s:KGSchool,grade:string,session:string,year:number):ParentReadiness {
  const steps=s.application_steps?.filter(e=>e.year===year&&e.grade===grade)??[];const events=s.events.filter(e=>e.entry_year===year);const discovered=year===2027?sourceField(s,'application'):undefined;
- const admission:ParentReadinessItem=steps.length||events.length?{state:'CONFIRMED',label:readinessLabel.CONFIRMED,detail:'已找到本校適用學年的公開申請步驟或公告。'}:discovered?.status==='CANDIDATE'||discovered?.status==='REVIEW'?{state:'REFERENCE_ONLY',label:readinessLabel.REFERENCE_ONLY,detail:sourceStatusLabel[discovered.status]+'；尚未人工核對，不能當成截止日期。'}:s.admissions.some(f=>f.state!=='UNKNOWN')?{state:'REFERENCE_ONLY',label:readinessLabel.REFERENCE_ONLY,detail:'只有概覽或舊版申請資料，不能當作當屆截止日。'}:{state:'TO_CONFIRM',label:readinessLabel.TO_CONFIRM,detail:'未找到本校目標學年的具體申請資料。'};
+ const admission:ParentReadinessItem=steps.length||events.length||discovered?.status==='PUBLISHED'?{state:'CONFIRMED',label:readinessLabel.CONFIRMED,detail:'已找到本校適用學年的公開申請步驟或公告。'}:discovered?.status==='CANDIDATE'||discovered?.status==='REVIEW'?{state:'REFERENCE_ONLY',label:readinessLabel.REFERENCE_ONLY,detail:sourceStatusLabel[discovered.status]+'；尚未人工核對，不能當成截止日期。'}:s.admissions.some(f=>f.state!=='UNKNOWN')?{state:'REFERENCE_ONLY',label:readinessLabel.REFERENCE_ONLY,detail:'只有概覽或舊版申請資料，不能當作當屆截止日。'}:{state:'TO_CONFIRM',label:readinessLabel.TO_CONFIRM,detail:'未找到本校目標學年的具體申請資料。'};
  const calc=costs(s.fees.rows,grade,session);const feeYear=s.fees.effective_from?Number(s.fees.effective_from.slice(0,4)):null;
  const fees:ParentReadinessItem=calc.subtotal!==null&&feeYear===year?{state:'CONFIRMED',label:readinessLabel.CONFIRMED,detail:'有同學年可計算收費文件；仍未必包括校車、用品及延長照顧。'}:calc.subtotal!==null?{state:'REFERENCE_ONLY',label:readinessLabel.REFERENCE_ONLY,detail:'有可計算收費，但不是目標學年已確認報價。'}:{state:'TO_CONFIRM',label:readinessLabel.TO_CONFIRM,detail:'未有通過核對的本班別收費小計。'};
  const exact=s.hours.filter(h=>h.session===session&&h.year===year);const reference=s.hours.filter(h=>h.session===session);const careFacts=s.care.some(f=>f.state!=='UNKNOWN');

@@ -29,6 +29,7 @@ MAX_PAGES_PER_SCHOOL = 6
 MAX_DOCUMENT_BYTES = 2_000_000
 MAX_TOTAL_BYTES = 1_200_000_000
 RETRIES = 2
+MIN_HOST_INTERVAL_SECONDS = 0.35
 FIELD_NAMES = ("application", "form", "fees", "hours")
 SOURCE_STATUSES = {"NOT_RUN", "CANDIDATE", "REVIEW", "FETCH_FAILED", "NOT_FOUND", "PUBLISHED"}
 RELEVANT_TERMS = (
@@ -87,6 +88,28 @@ def safe_https_url(value: str, base_host: str | None = None) -> str | None:
     return urllib.parse.urlunparse(parsed._replace(fragment=""))
 
 
+def require_public_host(host: str) -> None:
+    """Reject literal or DNS-resolved non-public destinations before connecting."""
+    try:
+        addresses = {item[4][0].split("%")[0] for item in socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)}
+    except socket.gaierror as exc:
+        raise ValueError("HOST_RESOLUTION_FAILED") from exc
+    if not addresses or any(not ipaddress.ip_address(address).is_global for address in addresses):
+        raise ValueError("NON_PUBLIC_HOST")
+
+
+class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def __init__(self, base_host: str) -> None:
+        self.base_host = base_host
+
+    def redirect_request(self, req: Any, fp: Any, code: int, msg: str, headers: Any, newurl: str) -> Any:
+        safe = safe_https_url(urllib.parse.urljoin(req.full_url, newurl), self.base_host)
+        if safe is None:
+            raise ValueError("UNAPPROVED_REDIRECT")
+        require_public_host(urllib.parse.urlparse(safe).hostname or "")
+        return super().redirect_request(req, fp, code, msg, headers, safe)
+
+
 class LinkParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
@@ -136,15 +159,27 @@ class TextParser(HTMLParser):
             self.parts.append(data)
 
 
-def html_text(raw: bytes) -> str:
+def decode_html(raw: bytes, content_type: str = "") -> str:
+    declared = re.search(r"charset\s*=\s*['\"]?([^\s;'\"]+)", content_type, re.I)
+    meta = re.search(br"charset\s*=\s*['\"]?([^\s;'\">]+)", raw[:4096], re.I)
+    encodings = [declared.group(1) if declared else "", meta.group(1).decode("ascii", "ignore") if meta else "", "utf-8-sig", "big5hkscs", "cp950", "gb18030"]
+    for encoding in dict.fromkeys(x for x in encodings if x):
+        try:
+            return raw.decode(encoding)
+        except (LookupError, UnicodeDecodeError):
+            continue
+    return raw.decode("utf-8", errors="replace")
+
+
+def html_text(raw: bytes, content_type: str = "") -> str:
     parser = TextParser()
-    parser.feed(raw.decode("utf-8-sig", errors="strict"))
+    parser.feed(decode_html(raw, content_type))
     return "\n".join(x.strip() for x in "".join(parser.parts).splitlines() if x.strip())
 
 
 def is_target_year(text: str, target_year: int = TARGET_YEAR) -> bool:
     next_year = target_year + 1
-    return bool(re.search(rf"{target_year}\s*(?:/|至|-|–|—)\s*{str(next_year)[-2:]}|{target_year}/{next_year}", text))
+    return bool(re.search(rf"{target_year}\s*(?:/|至|-|–|—)\s*(?:{next_year}|{str(next_year)[-2:]})(?!\d)", text))
 
 
 def _field_for(text: str) -> list[str]:
@@ -206,9 +241,9 @@ def extract_facts(text: str, url: str, links: Iterable[tuple[str, str]] = (), ta
     return {key: values for key, values in facts.items()}
 
 
-def discover_links(raw: bytes, page_url: str, limit: int = MAX_PAGES_PER_SCHOOL - 1) -> list[str]:
+def discover_links(raw: bytes, page_url: str, limit: int = MAX_PAGES_PER_SCHOOL - 1, content_type: str = "") -> list[str]:
     parser = LinkParser()
-    parser.feed(raw.decode("utf-8-sig", errors="strict"))
+    parser.feed(decode_html(raw, content_type))
     base_host = urllib.parse.urlparse(page_url).hostname
     scored: dict[str, int] = {}
     for href, label in parser.links:
@@ -272,6 +307,7 @@ class Fetcher:
         self.timeout = timeout
         import threading
         self.host_locks: defaultdict[str, Any] = defaultdict(threading.Lock)
+        self.host_last_request: dict[str, float] = {}
         self.total_bytes = 0
         self.total_lock = threading.Lock()
 
@@ -284,8 +320,14 @@ class Fetcher:
             last = "UNKNOWN"
             for attempt in range(1, RETRIES + 1):
                 try:
+                    require_public_host(urllib.parse.urlparse(safe).hostname or "")
+                    delay = MIN_HOST_INTERVAL_SECONDS - (time.monotonic() - self.host_last_request.get(host, 0.0))
+                    if delay > 0:
+                        time.sleep(delay)
+                    self.host_last_request[host] = time.monotonic()
                     request = urllib.request.Request(safe, headers={"User-Agent": "HK-School-Guide-KG-2027-Source/1.0"})
-                    with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                    opener = urllib.request.build_opener(SafeRedirectHandler(base_host))
+                    with opener.open(request, timeout=self.timeout) as response:
                         final = safe_https_url(response.geturl(), base_host)
                         if final is None or normalized_host(urllib.parse.urlparse(final).hostname) not in approved_hosts(base_host):
                             raise ValueError("UNAPPROVED_REDIRECT")
@@ -306,19 +348,19 @@ class Fetcher:
                     path.write_bytes(raw)
                     if is_pdf:
                         subprocess.run(["pdftotext", "-layout", str(path), str(text_path)], check=True, capture_output=True, timeout=20)
-                        text = text_path.read_text(encoding="utf8")
+                        text = text_path.read_text(encoding="utf8", errors="replace")
                     else:
-                        text = html_text(raw)
+                        text = html_text(raw, content_type)
                         text_path.write_text(text, encoding="utf8")
                     links: list[tuple[str, str]] = []
                     if not is_pdf:
-                        parser = LinkParser(); parser.feed(raw.decode("utf-8-sig", errors="strict")); links = parser.links
+                        parser = LinkParser(); parser.feed(decode_html(raw, content_type)); links = parser.links
                     return {
                         "url": safe, "capture_status": "CAPTURED", "attempt": attempt,
                         "captured_at": now(), "checked_at": now(), "path": str(path.relative_to(self.out)),
                         "text_path": str(text_path.relative_to(self.out)), "sha256": hashlib.sha256(raw).hexdigest(),
-                        "text_sha256": content_sha256(text.encode()), "bytes": len(raw),
-                        "facts": extract_facts(text, safe, links), "discovered_links": discover_links(raw, safe),
+                        "text_sha256": content_sha256(text_path.read_bytes()), "bytes": len(raw),
+                        "facts": extract_facts(text, safe, links), "discovered_links": [] if is_pdf else discover_links(raw, safe, content_type=content_type),
                         "review_status": "REVIEW_REQUIRED", "publication_status": "UNPUBLISHED",
                     }
                 except Exception as exc:  # explicit source jobs retain failure state and continue other schools
