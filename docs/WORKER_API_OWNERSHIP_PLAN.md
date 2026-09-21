@@ -1,6 +1,6 @@
 # Worker 與 API 責任劃分計劃
 
-狀態：milestone 1 已完成本機實作及自動測試；GitHub merge、指定 school-source artifact、production deploy 及 live acceptance 尚待完成。本文固定每個 Cloudflare Worker、公開 hostname、資料儲存及部署 workflow 的責任，避免正式幼稚園資料誤接測試 D1，或由多個 Worker 爭用同一 hostname。
+狀態：milestone 1 已完成 GitHub merge、指定 school-source artifact 審核、production deploy 及 live acceptance。資料候選的人工內容覆核及真人家長 usability test 仍是獨立未完成範圍。本文固定每個 Cloudflare Worker、公開 hostname、資料儲存及部署 workflow 的責任，避免正式幼稚園資料誤接測試 D1，或由多個 Worker 爭用同一 hostname。
 
 ## 決定
 
@@ -76,8 +76,8 @@
 - [x] 將單校及比較頁改用 detail API；每次仍核對 canonical ID、bundle ID 及請求世代，避免舊請求覆蓋新頁面。
 - [x] 保留現有靜態 JSON、ZIP、hash 及 verifier 作 source of truth、審計及 rollback；API 只是讀取投影。
 - [x] 更新 production Playwright、Worker unit tests、HTTP integration tests 及部署 verifier。
-- [ ] 經 GitHub PR、CI、merge 後，只使用指定的成功 school-source run artifact 發佈 production；取消沒有該 artifact 的自動 release。
-- [ ] 部署後核對 commit、Cloudflare Worker Version ID、bundle ID、1,025 個唯一 ID、`NOT_RUN=0`、API 分頁總數、desktop/mobile journeys 及 D1 writes `0`。
+- [x] 經 GitHub PR、CI、merge 後，只使用指定的成功 school-source run artifact 發佈 production；取消沒有該 artifact 的自動 release。
+- [x] 部署後核對 commit、Cloudflare Worker Version ID、bundle ID、1,025 個唯一 ID、`NOT_RUN=0`、API 分頁總數、desktop/mobile journeys 及 D1 writes `0`。
 
 ## Validation matrix
 
