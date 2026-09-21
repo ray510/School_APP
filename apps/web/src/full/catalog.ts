@@ -14,6 +14,7 @@ export function safeLink(value:string|undefined):string|null {try{const u=new UR
 export function display(value:string|undefined):string {if(!value?.trim()||/^(?:N\.?A\.?|[-–—])$/i.test(value.trim()))return '來源未提供';return value.replace(/<br\s*\/?\s*>/gi,'\n').replace(/<[^>]*>/g,'');}
 export function normalized(value:string):string {return value.normalize('NFKC').toLocaleLowerCase().replace(/\s+/g,'');}
 export async function readJSON<T>(path:string):Promise<T> {const r=await fetch(path,{signal:AbortSignal.timeout(15000)});if(!r.ok||!r.headers.get('content-type')?.includes('application/json'))throw new Error('資料暫時未能載入，請重新整理。');return r.json() as Promise<T>;}
+export async function readAPI<T,M=Record<string,unknown>>(path:string):Promise<{data:T;meta:M}> {const r=await fetch(path,{signal:AbortSignal.timeout(15000)});if(!r.headers.get('content-type')?.includes('application/json'))throw new Error('資料暫時未能載入，請重新整理。');const body=await r.json() as {data?:T;meta?:M;error?:{message?:string}};if(!r.ok||body.data===undefined||body.meta===undefined)throw new Error(body.error?.message??'資料暫時未能載入，請重新整理。');return {data:body.data,meta:body.meta};}
 export function fieldsFor(school:School):Array<[string,string,string]> {
  const base:Array<[string,string,string]>=[['地區',school.district,'教育局名錄／概覽原文'],['地址',school.address,'教育局名錄／概覽原文'],['授課時間',school.sessions.join('、'),'教育局名錄']];
  const c=school.classification;
