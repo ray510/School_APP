@@ -262,7 +262,7 @@ class SchoolSources(unittest.TestCase):
 
         fetcher = FakeFetcher()
         capture_school({"school_id": "school", "name": "甲幼稚園", "address": "甲街", "website": "https://school.example/"}, fetcher)
-        self.assertEqual(fetcher.calls, ["https://school.example/", "https://school.example/admission"])
+        self.assertEqual(fetcher.calls, ["https://school.example/", "https://school.example/admission/"])
 
     def test_prior_year_is_review_not_target_candidate(self):
         facts = extract_facts("2026/27 K1 學費 HK$10,000；上課時間 09:00 至 13:00", "https://school.example/")

@@ -45,6 +45,7 @@ FAILURE_REASON_MESSAGES = {
     "CAPTURE_BYTE_BUDGET": "擷取總容量已達上限",
     "PDF_TEXT_EXTRACTION_FAILED": "PDF 文字擷取失敗",
     "NO_REGISTERED_SCHOOL_WEBSITE": "年度校情資料未有登記學校網址",
+    "DIRECTORY_WEBSITE_REVIEW_REQUIRED": "名錄校網來源有歧義或證據未通過，待逐校核對",
     "HTTP_400": "來源回應 HTTP 400",
     "HTTP_403": "來源拒絕自動擷取（HTTP 403）",
     "HTTP_405": "來源不接受此讀取方式（HTTP 405）",
@@ -119,17 +120,23 @@ def normalized_host(value: str | None) -> str:
 
 
 def canonical_url(value: str) -> str:
-    """Canonicalise safe URLs for evidence keys and trailing-slash fetches."""
+    """Encode a request URL without changing path or query semantics.
+
+    A directory's trailing slash is meaningful both to servers and urljoin.
+    Keep existing percent escapes and query delimiters, and encode only unsafe
+    characters (including spaces and Unicode paths supplied by school sites).
+    URL approval remains the responsibility of safe_https_url.
+    """
     try:
         parsed = urllib.parse.urlparse(value)
     except ValueError:
         return value
     if not parsed.scheme or not parsed.netloc:
         return value
-    path = parsed.path or "/"
-    if path != "/":
-        path = path.rstrip("/") or "/"
-    return urllib.parse.urlunparse(parsed._replace(path=path, fragment=""))
+    path = urllib.parse.quote(parsed.path or "/", safe="/%:@!$&'()*+,;=-._~")
+    params = urllib.parse.quote(parsed.params, safe="%:@!$&'()*+,;=-._~")
+    query = urllib.parse.quote(parsed.query, safe="/%?:@!$&'()*+,;=[]-._~")
+    return urllib.parse.urlunparse(parsed._replace(path=path, params=params, query=query, fragment=""))
 
 
 def content_sha256(raw: bytes) -> str:
@@ -208,6 +215,10 @@ def approved_hosts(base_host: str | None) -> set[str]:
 
 
 def safe_https_url(value: str, base_host: str | None = None) -> str | None:
+    # urlparse silently removes some controls. Reject them before parsing;
+    # accepting an encoded path must never relax URL/security validation.
+    if any(ord(character) < 32 or ord(character) == 127 for character in value):
+        return None
     try:
         parsed = urllib.parse.urlparse(value)
         port = parsed.port
@@ -530,7 +541,9 @@ def discover_links(raw: bytes, page_url: str, limit: int = MAX_PAGES_PER_SCHOOL 
         url = safe_https_url(urllib.parse.urljoin(page_url, href), base_host)
         if not url or url == page_url:
             continue
-        text = f"{label} {url}"
+        # Score human-readable path terms, while retaining the encoded URL for
+        # transport. Image-only anchors may carry their only topic in the path.
+        text = f"{label} {urllib.parse.unquote(url)}"
         matches = [term for term in RELEVANT_TERMS if term.casefold() in text.casefold()]
         score = sum(4 if term.casefold() in text.casefold() else 1 for term in matches)
         if matches:
@@ -565,6 +578,58 @@ def field_states(pages: list[dict[str, Any]], failures: int, target_year: int = 
     return result
 
 
+def directory_website_seed(detail: dict[str, Any], sources: list[dict[str, Any]]) -> dict[str, Any]:
+    """Use only an unambiguous, hash-backed URL already in this card's S01 rows.
+
+    This supplies a discovery seed, not an approved identity or current-year
+    school fact. It never searches another card or rewrites annual evidence.
+    """
+    result: dict[str, Any] = {"website_seed_status": "DIRECTORY_NO_USABLE_URL", "website_candidates": [], "website_provenance": []}
+    metadata = [source for source in sources if source.get("id") == "edb-school-directory"]
+    if len(metadata) != 1 or not re.fullmatch(r"[a-f0-9]{64}", str(metadata[0].get("sha256", ""))) or not metadata[0].get("fetched_at") or not safe_https_url(str(metadata[0].get("url", "")), "edb.gov.hk"):
+        result["website_seed_status"] = "DIRECTORY_SOURCE_UNVERIFIED"
+        return result
+    metadata = metadata[0]
+    candidates: set[str] = set()
+    for row in detail.get("directory", []):
+        fields = row.get("fields", {})
+        digest = content_sha256(json.dumps(fields, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf8"))
+        if fields.get("SCHOOL LEVEL") not in {"KINDERGARTEN", "KINDERGARTEN-CUM-CHILD CARE CENTRES"} or not re.fullmatch(r"\d{12}", str(row.get("source_key", ""))) or row.get("source_key") != fields.get("SCHOOL NO.") or not isinstance(row.get("row"), int) or row["row"] < 1 or row.get("record_sha256") != digest:
+            result["website_seed_status"] = "DIRECTORY_ROW_UNVERIFIED"
+            return result
+        for field in ("WEBSITE", "網頁"):
+            value = str(fields.get(field, "")).strip()
+            if not value or value.upper() in {"N.A.", "N/A", "NA"}:
+                continue
+            # Registered HTTP is retained as source evidence; fetching still
+            # uses the existing HTTPS-only root builder and public-host check.
+            try:
+                parsed = urllib.parse.urlparse(value)
+                roots, _ = school_https_roots(value)
+            except ValueError:
+                roots = []
+                parsed = urllib.parse.urlparse("")
+            if parsed.scheme not in {"http", "https"} or not roots or any(ord(character) < 32 or ord(character) == 127 for character in value) or any(SENSITIVE_QUERY_KEY.search(key) for key, _ in urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)):
+                result["website_seed_status"] = "DIRECTORY_UNAPPROVED_URL_REVIEW"
+                return result
+            candidates.add(value)
+            result["website_provenance"].append({
+                "source_id": "edb-school-directory", "source_url": metadata["url"],
+                "source_sha256": metadata["sha256"], "edition": metadata.get("edition"),
+                "fetched_at": metadata["fetched_at"], "row": row["row"],
+                "source_key": row["source_key"], "record_sha256": digest,
+                "field": field, "registered_url": value,
+                "identity_scope": "EXISTING_PARENT_CARD_DIRECTORY_MEMBERSHIP",
+                "review_status": "REVIEW_REQUIRED", "publication_status": "UNPUBLISHED",
+            })
+    result["website_candidates"] = sorted(candidates)
+    if len(candidates) == 1:
+        result.update(website=next(iter(candidates)), website_seed_status="DIRECTORY_SINGLE_REGISTERED_URL")
+    elif len(candidates) > 1:
+        result["website_seed_status"] = "DIRECTORY_MULTIPLE_URLS_REVIEW"
+    return result
+
+
 def read_base_schools(base: pathlib.Path, parent_inputs: pathlib.Path | None = None) -> list[dict[str, Any]]:
     manifest = json.loads((base / "catalog-manifest.json").read_text(encoding="utf8"))
     if parent_inputs is not None:
@@ -580,12 +645,15 @@ def read_base_schools(base: pathlib.Path, parent_inputs: pathlib.Path | None = N
     for detail in sorted(source, key=lambda s: s["id"]):
         annual = detail.get("annual", [])
         fields = annual[0].get("fields", {}) if len(annual) == 1 else {}
-        schools.append({
+        school = {
             "school_id": detail["id"],
             "name": detail.get("name", ""),
             "address": detail.get("address", ""),
             "website": fields.get("學校網址", ""),
-        })
+        }
+        if not annual:
+            school.update(directory_website_seed(detail, manifest.get("sources", [])))
+        schools.append(school)
     return schools
 
 
@@ -634,6 +702,8 @@ class Fetcher:
                         final = safe_https_url(response.geturl(), base_host)
                         if final is None or normalized_host(urllib.parse.urlparse(final).hostname) not in approved_hosts(base_host):
                             raise ValueError("UNAPPROVED_REDIRECT")
+                        if any(SENSITIVE_QUERY_KEY.search(key) for key, _ in urllib.parse.parse_qsl(urllib.parse.urlparse(final).query, keep_blank_values=True)):
+                            raise ValueError("UNAPPROVED_REDIRECT" if final != safe else "UNAPPROVED_URL")
                         raw = response.read(MAX_DOCUMENT_BYTES + 1)
                         content_type = response.headers.get("content-type", "")
                     if len(raw) > MAX_DOCUMENT_BYTES:
@@ -660,11 +730,11 @@ class Fetcher:
                     if not is_pdf:
                         parser = LinkParser(); parser.feed(decode_html(raw, content_type)); links = parser.links
                     return {
-                        "url": safe, "capture_status": "CAPTURED", "attempt": attempt,
+                        "url": final, "requested_url": checked_url(safe), "capture_status": "CAPTURED", "attempt": attempt,
                         "captured_at": now(), "checked_at": now(), "path": str(path.relative_to(self.out)),
                         "text_path": str(text_path.relative_to(self.out)), "sha256": document_sha,
                         "text_sha256": content_sha256(text_path.read_bytes()), "bytes": len(raw),
-                        "facts": extract_facts(text, safe, links), "discovered_links": [] if is_pdf else discover_links(raw, safe, content_type=content_type),
+                        "facts": extract_facts(text, final, links), "discovered_links": [] if is_pdf else discover_links(raw, final, content_type=content_type),
                         "review_status": "REVIEW_REQUIRED", "publication_status": "UNPUBLISHED",
                     }
                 except Exception as exc:  # explicit source jobs retain failure state and continue other schools
@@ -683,6 +753,8 @@ def capture_school(school: dict[str, Any], fetcher: Fetcher, target_year: int = 
     base = {**school, "target_entry_year": target_year, "checked_at": now(), "review_status": "REVIEW_REQUIRED", "publication_status": "UNPUBLISHED"}
     if not roots or not base_host:
         code = "NO_REGISTERED_SCHOOL_WEBSITE" if not str(website).strip() else "UNAPPROVED_URL"
+        if school.get("website_seed_status") in {"DIRECTORY_SOURCE_UNVERIFIED", "DIRECTORY_ROW_UNVERIFIED", "DIRECTORY_UNAPPROVED_URL_REVIEW", "DIRECTORY_MULTIPLE_URLS_REVIEW"}:
+            code = "DIRECTORY_WEBSITE_REVIEW_REQUIRED"
         return {**base, "discovery_status": "NOT_FOUND", "reason_code": code, "reason": FAILURE_REASON_MESSAGES[code], "pages": [], "fetch_failures": [], "fields": field_states([], 0, target_year)}
     pages = []
     fetch_failures = []
