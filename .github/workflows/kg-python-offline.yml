@@ -1,0 +1,72 @@
+name: Kindergarten Python offline regression
+
+# PR-only: never dispatch a release or source-capture workflow.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kg-python-offline-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  kindergarten-python:
+    name: Kindergarten Python (offline)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      # Checkout/interpreter provisioning need GitHub network access; the entire
+      # regression and compilation phase below has no network interface/routes.
+      # Standard-library-only suite: no pip install, cache or production artifacts.
+      - name: Run all kindergarten tests and compileall without network
+        shell: bash
+        run: |
+          set -euo pipefail
+          python_bin="$(command -v python)"
+          test -d tests/kg_parent
+          test -d scripts/kg_parent
+          # Fail closed if isolation is unavailable; never retry with networking.
+          # A clean environment also excludes runner tokens and provider settings.
+          sudo unshare --net -- env -i PATH="$PATH" LANG=C.UTF-8 \
+            PYTHONUTF8=1 PYTHONNOUSERSITE=1 \
+            "$python_bin" - <<'PY'
+          import errno
+          import socket
+          import subprocess
+          import sys
+          import unittest
+
+          assert {name for _, name in socket.if_nameindex()} == {"lo"}, "Unexpected network interface"
+          with socket.socket() as probe:
+              probe.settimeout(1)
+              try:
+                  probe.connect(("192.0.2.1", 9))
+              except OSError as exc:
+                  assert exc.errno == errno.ENETUNREACH, exc
+              else:
+                  raise AssertionError("Network isolation failed")
+          print("PASS: isolated network namespace, no external route", flush=True)
+
+          suite = unittest.defaultTestLoader.discover("tests/kg_parent")
+          count = suite.countTestCases()
+          if count == 0:
+              raise SystemExit("No kindergarten tests discovered")
+          print(f"Discovered {count} kindergarten tests", flush=True)
+          result = unittest.TextTestRunner(verbosity=2).run(suite)
+          # Always run compileall, even when a regression fails.
+          compiled = subprocess.run([
+              sys.executable, "-m", "compileall", "-q",
+              "scripts/kg_parent", "tests/kg_parent",
+          ], check=False)
+          print(f"compileall exit code: {compiled.returncode}", flush=True)
+          if not result.wasSuccessful() or result.skipped or compiled.returncode:
+              raise SystemExit(1)
+          PY
